@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# Convenience script to run parrot with custom pg_dump wrapper in PATH
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Add the bin directory to PATH so our pg_dump wrapper is found
+export PATH="$SCRIPT_DIR:$PATH"
+
+# Run parrot with the modified PATH
+gleam run -m parrot "$@"
