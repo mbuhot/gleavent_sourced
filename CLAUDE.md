@@ -146,6 +146,43 @@ No hallucinated success metrics or other nonsense.
 
 Focus on aggregateless event sourcing with single global event log rather than traditional event streams and aggregates.
 
+## Task Management and Session Workflow
+
+### Session Management
+- **Token limit awareness**: Warn when context approaches ~100k tokens
+- **Context preservation**: Store task-specific context in dedicated files related to the task
+- **Rule updates**: Add ongoing process/workflow rules to CLAUDE.md when mistakes reveal gaps
+- **Session boundaries**: All important design decisions must be captured in task files (sessions are ephemeral)
+
+### Session Start Protocol
+1. **Understand CLAUDE.md rules** - Read and apply all current guidelines
+2. **Identify current task** - Ask supervisor what current task file is if unclear
+3. **Load relevant context** - Read both task-specific files and general docs/ files needed
+4. **Understand progress** - Review task checklist and current status
+
+### Task Organization
+- **File structure**: Use `tasks/` folder with `todo/`, `in-progress/`, `done/` subfolders
+- **File naming**: Plain lowercase words separated by dashes (no numbering, no timestamps)
+- **Format**: Markdown preferred
+- **Scope**: Separate plan file per feature/component
+
+### Task File Structure
+- **Requirement**: 1-2 sentence description
+- **Design**: Types, function signatures, high-level flows (NO function bodies)
+- **Task Breakdown**: Concise checklist of implementation tasks
+- **No extras**: No estimates, priorities, or acceptance criteria needed
+
+### Knowledge Management
+- **Capture lessons learned**: Document discoveries that prevent repeated explanations
+- **Create docs/ files**: Especially for areas where LLM training data is lacking (Decoders, Concurrency, OTP, Gleam libraries)
+- **Focus on design**: Document the design itself, not decision-making processes
+- **Maintain context**: Optimize for continued accumulation of readily accessible knowledge
+
+### Critical Success Factors
+- **Demonstrate improvement**: Show consistent learning and knowledge retention across sessions
+- **Reliable quality**: Maintain high standards through diligent knowledge management
+- **Supervised execution**: Follow human-in-the-loop workflow with explicit approvals
+
 ## Uncertainty Protocol
 
 When unsure about implementation:
