@@ -1,6 +1,10 @@
 import gleam/erlang/atom
+import gleam/erlang/process
 import gleam/list
 import gleam/string
+
+import gleavent_sourced/connection_pool
+import pog
 
 pub fn run_eunit(module_names: List(String)) -> Nil {
   run_eunit_verbose(module_names, verbose: False)
@@ -45,3 +49,33 @@ type EunitOption {
 
 @external(erlang, "gleeunit_ffi", "run_eunit")
 fn run_eunit_ffi(a: List(atom.Atom), b: List(EunitOption)) -> Result(Nil, a)
+
+/// Executes a test function within a database transaction that is automatically rolled back.
+/// This provides test isolation by setting up a connection pool and ensuring no changes persist.
+///
+/// ## Example
+/// ```gleam
+/// pub fn my_test() {
+///   test_runner.txn(fn(db) {
+///     // Your test code here
+///     let assert Ok(_) = pog.execute(some_query, on: db)
+///     // More test operations...
+///   })
+/// }
+/// ```
+pub fn txn(callback: fn(pog.Connection) -> Nil) -> Nil {
+  // Set up database connection pool with unique name
+  let pool_name = process.new_name("test_pool")
+  let assert Ok(_supervisor_pid) = connection_pool.start_supervisor(pool_name)
+  let db = pog.named_connection(pool_name)
+
+  // Execute test in transaction that will be rolled back
+  let assert Error(pog.TransactionRolledBack(_)) = pog.transaction(db, fn(conn) {
+    // Execute the user callback
+    callback(conn)
+
+    // Always return Error to force rollback
+    Error("Test rollback")
+  })
+  Nil
+}
