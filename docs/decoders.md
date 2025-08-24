@@ -144,15 +144,56 @@ decode.then(decode.string, fn(str) {
 })
 
 // Try multiple decoders in sequence
-decode.one_of([
+decode.one_of(
   decode.int,
-  decode.map(decode.string, int.parse) |> decode.then(fn(result) {
-    case result {
-      Ok(i) -> decode.success(i)
-      Error(_) -> decode.failure("Not a valid integer")
-    }
-  })
-])
+  or: [
+    decode.map(decode.string, int.parse) |> decode.then(fn(result) {
+      case result {
+        Ok(i) -> decode.success(i)
+        Error(_) -> decode.failure("Not a valid integer")
+      }
+    })
+  ]
+)
+```
+
+#### The one_of Function
+
+The `one_of` function allows you to try multiple decoders in sequence until one succeeds:
+
+```gleam
+pub fn one_of(
+  first: Decoder(a),
+  or alternatives: List(Decoder(a)),
+) -> Decoder(a)
+```
+
+- `first`: The first decoder to try
+- `or`: A labeled parameter containing a list of alternative decoders to try if the first fails
+
+Example usage:
+```gleam
+// Try to decode as int first, then as string-to-int
+let flexible_int_decoder = decode.one_of(
+  decode.int,
+  or: [
+    decode.then(decode.string, fn(str) {
+      case int.parse(str) {
+        Ok(i) -> decode.success(i)
+        Error(_) -> decode.failure("Not a valid integer")
+      }
+    })
+  ]
+)
+
+// For union types
+let event_decoder = decode.one_of(
+  user_created_decoder(),
+  or: [
+    user_updated_decoder(),
+    user_deleted_decoder()
+  ]
+)
 ```
 
 ### Error Handling
@@ -205,15 +246,17 @@ pub fn event_decoder() -> decode.Decoder(Event) {
 }
 ```
 
-#### Handling Lists of Mixed Types
+### Handling Lists of Mixed Types
 
 ```gleam
 // Decode a list where each item could be different types
-let mixed_decoder = decode.one_of([
+let mixed_decoder = decode.one_of(
   decode.map(decode.string, StringValue),
-  decode.map(decode.int, IntValue),
-  decode.map(decode.bool, BoolValue)
-])
+  or: [
+    decode.map(decode.int, IntValue),
+    decode.map(decode.bool, BoolValue)
+  ]
+)
 
 let list_decoder = decode.list(mixed_decoder)
 ```
@@ -323,7 +366,7 @@ pub type DecodeError {
 1. **Use the monadic style** with `use` for field extraction - it's more readable
 2. **Handle optional fields explicitly** with `optional_field` or `optional`
 3. **Validate data while decoding** using `then` and conditional logic
-4. **Use `one_of` for union types** or when multiple formats are acceptable
+5. **Use `one_of` for union types** or when multiple formats are acceptable (remember to use `first` decoder and `or:` parameter)
 5. **Collapse errors** for user-facing error messages
 6. **Use `recursive`** for self-referencing data structures
 7. **Test decoders thoroughly** on both Erlang and JavaScript targets

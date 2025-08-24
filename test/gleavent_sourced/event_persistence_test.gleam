@@ -1,4 +1,3 @@
-
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/json
@@ -7,12 +6,12 @@ import gleam/list
 import gleavent_sourced/connection_pool
 import gleavent_sourced/parrot_pog
 import gleavent_sourced/sql
-import gleeunit
-import gleeunit/should
+import gleavent_sourced/test_runner
+
 import pog
 
 pub fn main() {
-  gleeunit.main()
+  test_runner.run_eunit(["gleavent_sourced/event_persistence_test"])
 }
 
 pub fn append_and_read_event_test() {
@@ -20,6 +19,10 @@ pub fn append_and_read_event_test() {
   let pool_name = process.new_name("test_pool")
   let assert Ok(_supervisor_pid) = connection_pool.start_supervisor(pool_name)
   let db = pog.named_connection(pool_name)
+
+  // Clear events table for clean test state
+  let truncate_query = pog.query("TRUNCATE TABLE events RESTART IDENTITY")
+  let assert Ok(_) = pog.execute(truncate_query, on: db)
 
   // Create test event data
   let event_type = "test_event"
@@ -69,8 +72,7 @@ pub fn append_and_read_event_test() {
   let assert Ok(event) = list.first(rows)
 
   // Verify the event data matches what we inserted
-  event.event_type
-  |> should.equal(event_type)
+  assert event.event_type == event_type
 
   // Create decoders for JSON payload verification
   let payload_decoder = {
@@ -87,16 +89,12 @@ pub fn append_and_read_event_test() {
 
   // Parse and verify payload
   let assert Ok(#(message, count)) = json.parse(event.payload, payload_decoder)
-  message
-  |> should.equal("Hello, World!")
-  count
-  |> should.equal(42)
+  assert message == "Hello, World!"
+  assert count == 42
 
   // Parse and verify metadata
   let assert Ok(#(source, version)) =
     json.parse(event.metadata, metadata_decoder)
-  source
-  |> should.equal("test")
-  version
-  |> should.equal(1)
+  assert source == "test"
+  assert version == 1
 }

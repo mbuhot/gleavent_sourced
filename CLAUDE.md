@@ -57,15 +57,35 @@ No hallucinated success metrics or other nonsense.
 ### Testing
 - Use gleeunit (default Gleam test framework)
 - Add `main` function to each test module calling into eunit
-- Run single module tests with: `gleam run -m some_module_test`
 - Test functions must end with `_test`
 - Test names must be specific: `name_has_max_length_32_test` not `business_logic_test`
 - Group related assertions - test system behavior, not restate declarative code
-- Use `let assert Ok(expected) = actual` in test code
+- Use `let assert Ok(expected) = actual` in test code for pattern matching and extracting values
+- Use `assert value == expected` for equality checks (NOT `let assert expected = value`)
 - NEVER use `should` module
 - NEVER put assert/panic inside conditionals - control test setup to know what to expect
 - Create test-specific resources (DB pools, processes) rather than depending on application state
 - Tests should be completely independent and not require application startup
+
+#### Running Tests
+- **Run all tests**: `gleam test` (discovers and runs all test modules)
+- **Run individual test module**: `gleam run -m gleavent_sourced/<module_name>_test`
+  - Example: `gleam run -m gleavent_sourced/ticket_events_test`
+  - Shows only tests from that specific module
+- **Test module setup**: Each test module's `main()` function should call:
+  ```gleam
+  pub fn main() {
+    test_runner.run_eunit(["gleavent_sourced/<module_name>_test"])
+  }
+  ```
+- **Verbose test output** (shows test names and timing): 
+  ```gleam
+  pub fn main() {
+    test_runner.run_eunit_verbose(["gleavent_sourced/<module_name>_test"], verbose: True)
+  }
+  ```
+- **Quiet test output** (default): Uses `test_runner.run_eunit()` which defaults to `verbose: False`
+- **Module naming**: Use Gleam "/" convention in calls - helper automatically converts to Erlang "@" format
 
 ### Error Handling
 - Use Result types in implementation code
@@ -97,6 +117,8 @@ No hallucinated success metrics or other nonsense.
 - Testing: gleeunit (built-in)
 
 ### Package Documentation and Research Protocol
+- When you need to lookup the details of a package, **start by listing the contents of `build/packages` directory**
+- Follow the directory structure from there: `build/packages/<package-name>`
 - When you need to lookup the details of a package, review the source code
 - Package source code can be found at `build/packages/<package-name>`
 - **Always verify package purpose first** - don't assume based on name

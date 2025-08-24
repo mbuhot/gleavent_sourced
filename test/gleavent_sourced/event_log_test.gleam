@@ -2,15 +2,11 @@ import envoy
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleavent_sourced/event_log
-import gleeunit
+import gleavent_sourced/test_runner
 import pog
 
-pub type SimpleTestEvent {
-  TestEvent(message: String)
-}
-
 pub fn main() {
-  gleeunit.main()
+  test_runner.run_eunit(["gleavent_sourced/event_log_test"])
 }
 
 pub fn database_connection_test() {

@@ -56,7 +56,4 @@ pub fn connect() -> Result(Connection, ConnectionError)
 | [x] | Implement database connection function |
 | [x] | Implement append_event function with Parrot |
 | [x] | Implement read_all_events function with Parrot |
-| [x] | Write test that appends a simple event and reads it back |
-| [x] | Verify test fails initially (no implementation) |
-| [x] | Make test pass |
-| [ ] | Refactor if needed |
+| [ ] | Update tests to work with gleam types |

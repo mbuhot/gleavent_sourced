@@ -1,10 +1,12 @@
+import envoy
 import gleam/erlang/process
 import gleam/otp/static_supervisor
-import pog
 import gleam/result
-import envoy
+import pog
 
-pub fn start_supervisor(pool_name: process.Name(pog.Message)) -> Result(process.Pid, String) {
+pub fn start_supervisor(
+  pool_name: process.Name(pog.Message),
+) -> Result(process.Pid, String) {
   use database_url <- result.try(
     envoy.get("DATABASE_URL")
     |> result.replace_error("DATABASE_URL environment variable not set"),
