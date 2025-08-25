@@ -50,6 +50,8 @@ pub fn store_different_ticket_event_types_test() {
         events,
         ticket_event.ticket_event_to_type_and_payload,
         test_metadata,
+        event_filter.new(),
+        0,
       )
 
     // Read ticket events back using generated function
@@ -138,6 +140,8 @@ pub fn query_events_by_ticket_id_test() {
         all_events,
         ticket_event.ticket_event_to_type_and_payload,
         test_metadata,
+        event_filter.new(),
+        0,
       )
 
     // Query for T-001 events using jsonpath filtering
@@ -209,6 +213,8 @@ pub fn query_events_by_different_ticket_ids_test() {
         all_events,
         ticket_event.ticket_event_to_type_and_payload,
         test_metadata,
+        event_filter.new(),
+        0,
       )
 
     // Query for T-002 events - should get 1 event (TicketOpened only)
@@ -308,6 +314,8 @@ pub fn read_events_with_jsonb_path_filter_test() {
         all_events,
         ticket_event.ticket_event_to_type_and_payload,
         test_metadata,
+        event_filter.new(),
+        0,
       )
 
     // Create JSONB filter to find TicketOpened events with high priority
@@ -397,6 +405,8 @@ pub fn multi_filter_conditions_test() {
         all_events,
         ticket_event.ticket_event_to_type_and_payload,
         test_metadata,
+        event_filter.new(),
+        0,
       )
 
     // Create multi-condition filter: high priority TicketOpened OR T-001 TicketAssigned
@@ -453,6 +463,326 @@ pub fn multi_filter_conditions_test() {
   })
 }
 
+pub fn successful_batch_insert_no_conflicts_test() {
+  test_runner.txn(fn(db) {
+    // Create test events
+    let opened_event = ticket_event.TicketOpened(
+      ticket_id: "T-001",
+      title: "Test ticket",
+      description: "A test ticket for batch insert",
+      priority: "medium"
+    )
+    let assigned_event = ticket_event.TicketAssigned(
+      ticket_id: "T-001",
+      assignee: "developer@example.com",
+      assigned_at: "2024-01-01T10:00:00Z"
+    )
+    let events = [opened_event, assigned_event]
+    let test_metadata = ticket_event.create_test_metadata()
+
+    // Create empty conflict filter (should never conflict)
+    let empty_filter = event_filter.new()
+
+    // Append events with optimistic concurrency control
+    let result = event_log.append_events(
+      db,
+      events,
+      ticket_event.ticket_event_to_type_and_payload,
+      test_metadata,
+      empty_filter,
+      0,  // last_seen_sequence = 0 (no conflicts expected)
+    )
+
+    // Should succeed with no conflicts
+    let assert Ok(event_log.AppendSuccess) = result
+
+    // Verify events were actually inserted by querying them back for T-001
+    let #(select_sql, select_params, decoder) = sql.read_events_for_ticket_command_context(ticket_id: "T-001")
+    let select_query =
+      pog.query(select_sql)
+      |> parrot_pog.parameters(select_params)
+      |> pog.returning(decoder)
+
+    let assert Ok(returned) = pog.execute(select_query, on: db)
+    let rows = returned.rows
+
+    // Should have exactly 2 events for T-001
+    let assert 2 = list.length(rows)
+
+    // Verify event types
+    let event_types = list.map(rows, fn(row) { row.event_type })
+    let assert True = list.contains(event_types, "TicketOpened")
+    let assert True = list.contains(event_types, "TicketAssigned")
+
+    Nil
+  })
+}
+
+pub fn conflict_detection_events_added_since_last_read_test() {
+  test_runner.txn(fn(db) {
+    // Step 1: Insert initial events
+    let initial_event = ticket_event.TicketOpened(
+      ticket_id: "T-002",
+      title: "Initial ticket",
+      description: "This ticket was opened first",
+      priority: "low"
+    )
+    let test_metadata = ticket_event.create_test_metadata()
+
+    let assert Ok(event_log.AppendSuccess) = event_log.append_events(
+      db,
+      [initial_event],
+      ticket_event.ticket_event_to_type_and_payload,
+      test_metadata,
+      event_filter.new(),
+      0,
+    )
+
+    // Step 2: Query to get current sequence number
+    let #(select_sql, select_params, decoder) = sql.read_events_for_ticket_command_context(ticket_id: "T-002")
+    let select_query =
+      pog.query(select_sql)
+      |> parrot_pog.parameters(select_params)
+      |> pog.returning(decoder)
+
+    let assert Ok(returned) = pog.execute(select_query, on: db)
+    let rows = returned.rows
+    let assert [first_event] = rows
+    let last_seen_sequence = first_event.sequence_number
+
+    // Step 3: Insert a conflicting event (simulates another process adding events)
+    let conflicting_event = ticket_event.TicketAssigned(
+      ticket_id: "T-002",
+      assignee: "another-process@example.com",
+      assigned_at: "2024-01-01T11:00:00Z"
+    )
+
+    let assert Ok(event_log.AppendSuccess) = event_log.append_events(
+      db,
+      [conflicting_event],
+      ticket_event.ticket_event_to_type_and_payload,
+      test_metadata,
+      event_filter.new(),
+      0,  // Use 0 to bypass conflict check for this insert
+    )
+
+    // Step 4: Try to insert new events with outdated sequence number and conflicting filter
+    let new_event = ticket_event.TicketClosed(
+      ticket_id: "T-002",
+      resolution: "Fixed the issue",
+      closed_at: "2024-01-01T12:00:00Z"
+    )
+
+    // Create conflict filter that would match the TicketAssigned event
+    let conflict_filter =
+      event_filter.new()
+      |> event_filter.for_type("TicketAssigned", event_filter.attr_string("ticket_id", "T-002"))
+
+    // This should detect conflict because TicketAssigned was added after last_seen_sequence
+    let result = event_log.append_events(
+      db,
+      [new_event],
+      ticket_event.ticket_event_to_type_and_payload,
+      test_metadata,
+      conflict_filter,
+      last_seen_sequence,
+    )
+
+    // Should return conflict with count of 1
+    let assert Ok(event_log.AppendConflict(conflict_count: 1)) = result
+
+    // Verify the conflicting event was NOT inserted by checking final count
+    let #(final_sql, final_params, final_decoder) = sql.read_events_for_ticket_command_context(ticket_id: "T-002")
+    let final_query =
+      pog.query(final_sql)
+      |> parrot_pog.parameters(final_params)
+      |> pog.returning(final_decoder)
+
+    let assert Ok(final_returned) = pog.execute(final_query, on: db)
+    let final_rows = final_returned.rows
+
+    // Should still have only 2 events (initial + conflicting), not 3
+    let assert 2 = list.length(final_rows)
+
+    Nil
+  })
+}
+
+pub fn empty_events_list_with_conflict_filter_test() {
+  test_runner.txn(fn(db) {
+    // Step 1: Insert some existing events that would match our conflict filter
+    let existing_event = ticket_event.TicketOpened(
+      ticket_id: "T-003",
+      title: "Existing ticket",
+      description: "This ticket exists before our empty append",
+      priority: "high"
+    )
+    let test_metadata = ticket_event.create_test_metadata()
+
+    let assert Ok(event_log.AppendSuccess) = event_log.append_events(
+      db,
+      [existing_event],
+      ticket_event.ticket_event_to_type_and_payload,
+      test_metadata,
+      event_filter.new(),
+      0,
+    )
+
+    // Step 2: Get the sequence number after the existing event
+    let #(select_sql, select_params, decoder) = sql.read_events_for_ticket_command_context(ticket_id: "T-003")
+    let select_query =
+      pog.query(select_sql)
+      |> parrot_pog.parameters(select_params)
+      |> pog.returning(decoder)
+
+    let assert Ok(returned) = pog.execute(select_query, on: db)
+    let rows = returned.rows
+    let assert [first_event] = rows
+    let last_seen_sequence = first_event.sequence_number
+
+    // Step 3: Try to append empty list with a conflict filter that matches existing events
+    let conflict_filter =
+      event_filter.new()
+      |> event_filter.for_type("TicketOpened", event_filter.attr_string("ticket_id", "T-003"))
+
+    let result = event_log.append_events(
+      db,
+      [],  // Empty events list
+      ticket_event.ticket_event_to_type_and_payload,
+      test_metadata,
+      conflict_filter,
+      last_seen_sequence,
+    )
+
+    // Should return conflict with 0 count because no events were inserted
+    let assert Ok(event_log.AppendConflict(conflict_count: 0)) = result
+
+    // Step 4: Verify no additional events were added
+    let #(final_sql, final_params, final_decoder) = sql.read_events_for_ticket_command_context(ticket_id: "T-003")
+    let final_query =
+      pog.query(final_sql)
+      |> parrot_pog.parameters(final_params)
+      |> pog.returning(final_decoder)
+
+    let assert Ok(final_returned) = pog.execute(final_query, on: db)
+    let final_rows = final_returned.rows
+
+    // Should still have only 1 event (the original)
+    let assert 1 = list.length(final_rows)
+
+    Nil
+  })
+}
+
+pub fn all_or_nothing_batch_behavior_test() {
+  test_runner.txn(fn(db) {
+    // Step 1: Insert an existing event that will cause conflicts
+    let existing_event = ticket_event.TicketOpened(
+      ticket_id: "T-004",
+      title: "Existing ticket",
+      description: "This ticket exists and will cause conflicts",
+      priority: "medium"
+    )
+    let test_metadata = ticket_event.create_test_metadata()
+
+    let assert Ok(event_log.AppendSuccess) = event_log.append_events(
+      db,
+      [existing_event],
+      ticket_event.ticket_event_to_type_and_payload,
+      test_metadata,
+      event_filter.new(),
+      0,
+    )
+
+    // Step 2: Get the sequence number after the existing event
+    let #(select_sql, select_params, decoder) = sql.read_events_for_ticket_command_context(ticket_id: "T-004")
+    let select_query =
+      pog.query(select_sql)
+      |> parrot_pog.parameters(select_params)
+      |> pog.returning(decoder)
+
+    let assert Ok(returned) = pog.execute(select_query, on: db)
+    let rows = returned.rows
+    let assert [first_event] = rows
+    let last_seen_sequence = first_event.sequence_number
+
+    // Step 3: Insert another conflicting event (simulates concurrent modification)
+    let conflicting_event = ticket_event.TicketAssigned(
+      ticket_id: "T-004",
+      assignee: "concurrent-user@example.com",
+      assigned_at: "2024-01-01T11:30:00Z"
+    )
+
+    let assert Ok(event_log.AppendSuccess) = event_log.append_events(
+      db,
+      [conflicting_event],
+      ticket_event.ticket_event_to_type_and_payload,
+      test_metadata,
+      event_filter.new(),
+      0,  // Bypass conflict check for this insert
+    )
+
+    // Step 4: Try to insert a batch with mixed conflicts
+    // - One event for T-004 (would conflict with TicketAssigned)
+    // - One event for T-999 (would not conflict)
+    let batch_events = [
+      ticket_event.TicketClosed(
+        ticket_id: "T-004",
+        resolution: "Fixed the T-004 issue",
+        closed_at: "2024-01-01T12:00:00Z"
+      ),
+      ticket_event.TicketOpened(
+        ticket_id: "T-999",
+        title: "Unrelated ticket",
+        description: "This ticket should not conflict",
+        priority: "low"
+      )
+    ]
+
+    // Create conflict filter that matches T-004 TicketAssigned events
+    let conflict_filter =
+      event_filter.new()
+      |> event_filter.for_type("TicketAssigned", event_filter.attr_string("ticket_id", "T-004"))
+
+    let result = event_log.append_events(
+      db,
+      batch_events,
+      ticket_event.ticket_event_to_type_and_payload,
+      test_metadata,
+      conflict_filter,
+      last_seen_sequence,
+    )
+
+    // Should return conflict - ALL events are rejected, even the non-conflicting T-999 event
+    let assert Ok(event_log.AppendConflict(conflict_count: 1)) = result
+
+    // Step 5: Verify NO events from the batch were inserted
+    // Check T-004 still has only 2 events (original + conflicting)
+    let #(t004_sql, t004_params, t004_decoder) = sql.read_events_for_ticket_command_context(ticket_id: "T-004")
+    let t004_query =
+      pog.query(t004_sql)
+      |> parrot_pog.parameters(t004_params)
+      |> pog.returning(t004_decoder)
+
+    let assert Ok(t004_returned) = pog.execute(t004_query, on: db)
+    let t004_rows = t004_returned.rows
+    let assert 2 = list.length(t004_rows)  // Still only original + conflicting
+
+    // Check T-999 has 0 events (the non-conflicting event was also rejected)
+    let #(t999_sql, t999_params, t999_decoder) = sql.read_events_for_ticket_command_context(ticket_id: "T-999")
+    let t999_query =
+      pog.query(t999_sql)
+      |> parrot_pog.parameters(t999_params)
+      |> pog.returning(t999_decoder)
+
+    let assert Ok(t999_returned) = pog.execute(t999_query, on: db)
+    let t999_rows = t999_returned.rows
+    let assert 0 = list.length(t999_rows)  // No events inserted due to all-or-nothing behavior
+
+    Nil
+  })
+}
+
 pub fn high_level_query_events_test() {
   test_runner.txn(fn(db) {
     // Create test events
@@ -488,6 +818,8 @@ pub fn high_level_query_events_test() {
         all_events,
         ticket_event.ticket_event_to_type_and_payload,
         test_metadata,
+        event_filter.new(),
+        0,
       )
 
     // Create filter for high priority tickets

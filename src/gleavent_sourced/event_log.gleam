@@ -1,9 +1,10 @@
+import gleam/result
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
-import gleam/result
+
 
 import gleam/erlang/process
 import gleavent_sourced/event_filter.{type EventFilter}
@@ -44,25 +45,50 @@ pub fn append_events(
   db: pog.Connection,
   events: List(event_type),
   event_converter: fn(event_type) -> #(String, json.Json),
-  metadata: String,
-) -> Result(Nil, pog.QueryError) {
-  list.try_each(events, fn(event) {
-    let #(event_type, payload_json) = event_converter(event)
-    let payload = json.to_string(payload_json)
+  metadata: dict.Dict(String, String),
+  conflict_filter: EventFilter,
+  last_seen_sequence: Int,
+) -> Result(AppendResult, pog.QueryError) {
+  // Convert events to JSON array format
+  let events_json_array =
+    events
+    |> json.array(fn(event) {
+      let #(event_type, payload_json) = event_converter(event)
+      json.object([
+        #("type", json.string(event_type)),
+        #("data", payload_json),
+        #("metadata", json.object(
+          dict.to_list(metadata)
+          |> list.map(fn(pair) { #(pair.0, json.string(pair.1)) })
+        ))
+      ])
+    })
+    |> json.to_string
 
-    let #(insert_sql, insert_params) =
-      sql.append_event(
-        event_type: event_type,
-        payload: payload,
-        metadata: metadata,
-      )
+  // Convert conflict filter to JSON string
+  let conflict_filter_json = event_filter.to_string(conflict_filter)
 
-    let insert_query =
-      pog.query(insert_sql)
-      |> parrot_pog.parameters(insert_params)
+  // Execute batch insert with conflict check
+  let #(batch_sql, batch_params, batch_decoder) =
+    sql.batch_insert_events_with_conflict_check(
+      conflict_filter: conflict_filter_json,
+      last_seen_sequence: last_seen_sequence,
+      events: events_json_array
+    )
 
-    pog.execute(insert_query, on: db)
-    |> result.map(fn(_) { Nil })
+  let batch_query =
+    pog.query(batch_sql)
+    |> parrot_pog.parameters(batch_params)
+    |> pog.returning(batch_decoder)
+
+  pog.execute(batch_query, on: db)
+  |> result.map(fn(returned){
+    let assert [row] = returned.rows
+    case row.status {
+      "success" -> AppendSuccess
+      "conflict" -> AppendConflict(conflict_count: row.conflict_count)
+      _ -> panic as "unexpected status from batch insert"
+    }
   })
 }
 

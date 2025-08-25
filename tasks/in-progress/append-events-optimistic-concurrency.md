@@ -42,15 +42,15 @@ pub fn append_events(
 
 ## Task Breakdown
 
-- [ ] Add `AppendResult` type to `event_log.gleam`
-- [ ] Update SQL module with CTE-based batch insert with conflict checking
-- [ ] Add SQL function `batch_insert_events_with_conflict_check` with decoder
-- [ ] Update `append_events` function signature to accept filter and last_seen_sequence
-- [ ] Implement conflict detection logic in `append_events`
-- [ ] Add helper function to convert events list to JSON array format
-- [ ] Update all existing `append_events` call sites to provide empty filter + sequence 0
-- [ ] Write test for successful batch insert (no conflicts)
-- [ ] Write test for conflict detection (events added since last read)
-- [ ] Write test for mixed scenario (some events conflict, some don't)
-- [ ] Write test for empty events list with conflict filter
-- [ ] Update existing tests to handle new function signature
+- [x] Add `AppendResult` type to `event_log.gleam`
+- [x] Update SQL module with CTE-based batch insert with conflict checking
+- [x] Add SQL function `batch_insert_events_with_conflict_check` with decoder
+- [x] Update `append_events` function signature to accept filter and last_seen_sequence
+- [x] Implement conflict detection logic in `append_events`
+- [x] Add helper function to convert events list to JSON array format
+- [x] Update all existing `append_events` call sites to provide empty filter + sequence 0
+- [x] Write test for successful batch insert (no conflicts)
+- [x] Write test for conflict detection (events added since last read)
+- [x] Write test for mixed scenario (demonstrates all-or-nothing batch behavior)
+- [x] Write test for empty events list with conflict filter
+- [x] Update existing tests to handle new function signature

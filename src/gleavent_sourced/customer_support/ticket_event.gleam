@@ -1,3 +1,4 @@
+import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/json
@@ -49,12 +50,11 @@ pub fn ticket_event_to_type_and_payload(
   }
 }
 
-pub fn create_test_metadata() -> String {
-  json.object([
-    #("source", json.string("ticket_service")),
-    #("version", json.int(1)),
+pub fn create_test_metadata() -> dict.Dict(String, String) {
+  dict.from_list([
+    #("source", "ticket_service"),
+    #("version", "1"),
   ])
-  |> json.to_string
 }
 
 pub fn ticket_event_mapper(event_type: String, payload_dynamic: Dynamic) {

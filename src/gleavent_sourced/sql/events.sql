@@ -53,7 +53,7 @@ new_events_parsed AS (
   SELECT
     event_data ->> 'type' as event_type,
     event_data -> 'data' as event_data,
-    event_data ->> 'metadata' as metadata
+    event_data -> 'metadata' as metadata
   FROM jsonb_array_elements(@events) AS event_data
 ),
 insert_result AS (
