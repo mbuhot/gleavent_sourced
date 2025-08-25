@@ -6,6 +6,7 @@ import pog
 
 pub fn start_supervisor(
   pool_name: process.Name(pog.Message),
+  pool_size: Int,
 ) -> Result(process.Pid, String) {
   use database_url <- result.try(
     envoy.get("DATABASE_URL")
@@ -19,7 +20,7 @@ pub fn start_supervisor(
 
   let pool_child =
     config
-    |> pog.pool_size(15)
+    |> pog.pool_size(pool_size)
     |> pog.supervised
 
   static_supervisor.new(static_supervisor.OneForOne)

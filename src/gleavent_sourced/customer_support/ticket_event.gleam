@@ -1,5 +1,7 @@
+import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/json
+import gleam/result
 
 pub type TicketEvent {
   TicketOpened(
@@ -12,7 +14,9 @@ pub type TicketEvent {
   TicketClosed(ticket_id: String, resolution: String, closed_at: String)
 }
 
-pub fn ticket_event_to_type_and_payload(event: TicketEvent) -> #(String, String) {
+pub fn ticket_event_to_type_and_payload(
+  event: TicketEvent,
+) -> #(String, json.Json) {
   case event {
     TicketOpened(ticket_id, title, description, priority) -> {
       let payload =
@@ -22,7 +26,6 @@ pub fn ticket_event_to_type_and_payload(event: TicketEvent) -> #(String, String)
           #("description", json.string(description)),
           #("priority", json.string(priority)),
         ])
-        |> json.to_string
       #("TicketOpened", payload)
     }
     TicketAssigned(ticket_id, assignee, assigned_at) -> {
@@ -32,7 +35,6 @@ pub fn ticket_event_to_type_and_payload(event: TicketEvent) -> #(String, String)
           #("assignee", json.string(assignee)),
           #("assigned_at", json.string(assigned_at)),
         ])
-        |> json.to_string
       #("TicketAssigned", payload)
     }
     TicketClosed(ticket_id, resolution, closed_at) -> {
@@ -42,7 +44,6 @@ pub fn ticket_event_to_type_and_payload(event: TicketEvent) -> #(String, String)
           #("resolution", json.string(resolution)),
           #("closed_at", json.string(closed_at)),
         ])
-        |> json.to_string
       #("TicketClosed", payload)
     }
   }
@@ -54,6 +55,20 @@ pub fn create_test_metadata() -> String {
     #("version", json.int(1)),
   ])
   |> json.to_string
+}
+
+pub fn ticket_event_mapper(event_type: String, payload_dynamic: Dynamic) {
+  let decode_with = fn(decoder) {
+    decode.run(payload_dynamic, decoder)
+    |> result.map_error(fn(_) { "Failed to decode " <> event_type })
+  }
+
+  case event_type {
+    "TicketOpened" -> decode_with(ticket_opened_decoder())
+    "TicketAssigned" -> decode_with(ticket_assigned_decoder())
+    "TicketClosed" -> decode_with(ticket_closed_decoder())
+    _ -> Error("Unknown event type: " <> event_type)
+  }
 }
 
 pub fn ticket_opened_decoder() -> decode.Decoder(TicketEvent) {

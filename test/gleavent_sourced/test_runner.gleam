@@ -10,15 +10,17 @@ pub fn run_eunit(module_names: List(String)) -> Nil {
   run_eunit_verbose(module_names, verbose: False)
 }
 
-pub fn run_eunit_verbose(module_names: List(String), verbose verbose: Bool) -> Nil {
+pub fn run_eunit_verbose(
+  module_names: List(String),
+  verbose verbose: Bool,
+) -> Nil {
   let base_options = [Report(#(GleeunitProgress, [Colored(True)]))]
   let options = case verbose {
     True -> [Verbose, ..base_options]
     False -> base_options
   }
-  let erlang_module_names = list.map(module_names, fn(name) {
-    string.replace(name, "/", "@")
-  })
+  let erlang_module_names =
+    list.map(module_names, fn(name) { string.replace(name, "/", "@") })
   let module_atoms = list.map(erlang_module_names, atom.create)
 
   let result = run_eunit_ffi(module_atoms, options)
@@ -51,7 +53,7 @@ type EunitOption {
 fn run_eunit_ffi(a: List(atom.Atom), b: List(EunitOption)) -> Result(Nil, a)
 
 /// Executes a test function within a database transaction that is automatically rolled back.
-/// This provides test isolation by setting up a connection pool and ensuring no changes persist.
+/// This provides test isolation using a single direct connection. Changes do not persist due to rollback.
 ///
 /// ## Example
 /// ```gleam
@@ -64,18 +66,19 @@ fn run_eunit_ffi(a: List(atom.Atom), b: List(EunitOption)) -> Result(Nil, a)
 /// }
 /// ```
 pub fn txn(callback: fn(pog.Connection) -> Nil) -> Nil {
-  // Set up database connection pool with unique name
+  // Create minimal connection pool with size 1 for test
   let pool_name = process.new_name("test_pool")
-  let assert Ok(_supervisor_pid) = connection_pool.start_supervisor(pool_name)
+  let assert Ok(_) = connection_pool.start_supervisor(pool_name, 1)
   let db = pog.named_connection(pool_name)
 
   // Execute test in transaction that will be rolled back
-  let assert Error(pog.TransactionRolledBack(_)) = pog.transaction(db, fn(conn) {
-    // Execute the user callback
-    callback(conn)
+  let assert Error(pog.TransactionRolledBack(_)) =
+    pog.transaction(db, fn(conn) {
+      // Execute the user callback
+      callback(conn)
 
-    // Always return Error to force rollback
-    Error("Test rollback")
-  })
+      // Always return Error to force rollback
+      Error("Test rollback")
+    })
   Nil
 }
