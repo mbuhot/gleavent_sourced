@@ -1,6 +1,8 @@
 import gleam/dict.{type Dict}
+import gleam/dynamic.{type Dynamic}
 import gleam/result
 import gleavent_sourced/event_filter.{type EventFilter}
+import gleavent_sourced/event_log
 import pog
 
 // Generic command handler definition
@@ -10,6 +12,7 @@ pub type CommandHandler(command, event, context, error) {
     context_reducer: fn(List(event), context) -> context,
     initial_context: context,
     command_logic: fn(command, context) -> Result(List(event), error),
+    event_mapper: fn(String, Dynamic) -> Result(event, String),
   )
 }
 
@@ -49,11 +52,22 @@ pub fn handle_command(
   case dict.get(router.handlers, command_type) {
     Error(_) -> Error("Handler not found for command type: " <> command_type)
     Ok(handler) -> {
-      // For now, implement simple command processing without event loading/conflicts
-      // Just execute the command logic directly with initial context
-      case handler.command_logic(command, handler.initial_context) {
-        Ok(events) -> Ok(CommandAccepted(events))
-        Error(business_error) -> Ok(CommandRejected(business_error))
+      // 1. Create event filter from command
+      let filter = handler.event_filter(command)
+
+      // 2. Load events from database
+      case event_log.query_events(db, filter, handler.event_mapper) {
+        Ok(#(loaded_events, _max_seq)) -> {
+          // 3. Build context from loaded events
+          let context = handler.context_reducer(loaded_events, handler.initial_context)
+
+          // 4. Execute command logic with built context
+          case handler.command_logic(command, context) {
+            Ok(events) -> Ok(CommandAccepted(events))
+            Error(business_error) -> Ok(CommandRejected(business_error))
+          }
+        }
+        Error(_query_error) -> Error("Failed to load events for command processing")
       }
     }
   }
