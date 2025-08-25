@@ -1,10 +1,9 @@
-import gleam/result
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
-
+import gleam/result
 
 import gleam/erlang/process
 import gleavent_sourced/event_filter.{type EventFilter}
@@ -57,10 +56,13 @@ pub fn append_events(
       json.object([
         #("type", json.string(event_type)),
         #("data", payload_json),
-        #("metadata", json.object(
-          dict.to_list(metadata)
-          |> list.map(fn(pair) { #(pair.0, json.string(pair.1)) })
-        ))
+        #(
+          "metadata",
+          json.object(
+            dict.to_list(metadata)
+            |> list.map(fn(pair) { #(pair.0, json.string(pair.1)) }),
+          ),
+        ),
       ])
     })
     |> json.to_string
@@ -73,7 +75,7 @@ pub fn append_events(
     sql.batch_insert_events_with_conflict_check(
       conflict_filter: conflict_filter_json,
       last_seen_sequence: last_seen_sequence,
-      events: events_json_array
+      events: events_json_array,
     )
 
   let batch_query =
@@ -82,7 +84,7 @@ pub fn append_events(
     |> pog.returning(batch_decoder)
 
   pog.execute(batch_query, on: db)
-  |> result.map(fn(returned){
+  |> result.map(fn(returned) {
     let assert [row] = returned.rows
     case row.status {
       "success" -> AppendSuccess

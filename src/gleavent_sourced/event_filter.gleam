@@ -1,6 +1,8 @@
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/json
 import gleam/list
+import gleam/string
 
 /// Builder for creating event filters with a clean API
 pub type EventFilter {
@@ -32,13 +34,22 @@ pub fn new() -> EventFilter {
 }
 
 /// Add a filter condition for a specific event type
+///
+/// Multiple AttributeFilters for the same event type are combined with AND logic.
+/// Multiple for_type calls create OR conditions between different event types.
+///
+/// Example:
+/// - `for_type("TicketOpened", [attr_string("priority", "high"), attr_string("ticket_id", "T-100")])`
+///   finds events where priority="high" AND ticket_id="T-100"
+/// - Multiple `for_type` calls create OR conditions between event types
 pub fn for_type(
   filter: EventFilter,
   event_type: String,
-  attribute_filter: AttributeFilter,
+  attribute_filters: List(AttributeFilter),
 ) -> EventFilter {
-  let condition = attribute_filter_to_condition(event_type, attribute_filter)
-  EventFilter(filters: [condition, ..filter.filters])
+  let combined_condition =
+    combine_attribute_filters_to_condition(event_type, attribute_filters)
+  EventFilter(filters: [combined_condition, ..filter.filters])
 }
 
 /// Create a string equality attribute filter
@@ -91,61 +102,98 @@ pub fn to_string(filter: EventFilter) -> String {
   |> json.to_string
 }
 
-/// Convert an AttributeFilter to a FilterCondition
-fn attribute_filter_to_condition(
+/// Combine multiple AttributeFilters into a single FilterCondition with AND logic
+fn combine_attribute_filters_to_condition(
   event_type: String,
-  attr_filter: AttributeFilter,
+  attribute_filters: List(AttributeFilter),
 ) -> FilterCondition {
-  case attr_filter {
-    StringEquals(field, value) -> {
-      let param_name = field <> "_param"
+  case attribute_filters {
+    [] ->
       FilterCondition(
         event_type: event_type,
-        filter_expr: "$." <> field <> " ? (@ == $" <> param_name <> ")",
+        filter_expr: "$ ? (true)",
+        params: dict.new(),
+      )
+    [single_filter] -> {
+      let part = attribute_filter_to_condition_part(single_filter, 0)
+      FilterCondition(
+        event_type: event_type,
+        filter_expr: "$ ? (" <> part.expression <> ")",
+        params: part.params,
+      )
+    }
+    multiple_filters -> {
+      let indexed_filters =
+        list.index_map(multiple_filters, fn(filter, index) { #(filter, index) })
+      let parts =
+        list.map(indexed_filters, fn(pair) {
+          let #(filter, index) = pair
+          attribute_filter_to_condition_part(filter, index)
+        })
+      let expressions = list.map(parts, fn(part) { part.expression })
+      let combined_expr = "$ ? (" <> string.join(expressions, " && ") <> ")"
+      let combined_params =
+        list.fold(parts, dict.new(), fn(acc, part) {
+          dict.merge(acc, part.params)
+        })
+      FilterCondition(
+        event_type: event_type,
+        filter_expr: combined_expr,
+        params: combined_params,
+      )
+    }
+  }
+}
+
+/// Helper type for building JSONPath expressions
+type FilterPart {
+  FilterPart(expression: String, params: dict.Dict(String, json.Json))
+}
+
+/// Convert an AttributeFilter to a condition part with unique parameter names
+fn attribute_filter_to_condition_part(
+  attr_filter: AttributeFilter,
+  index: Int,
+) -> FilterPart {
+  case attr_filter {
+    StringEquals(field, value) -> {
+      let param_name = field <> "_param_" <> int.to_string(index)
+      FilterPart(
+        expression: "$." <> field <> " == $" <> param_name,
         params: dict.from_list([#(param_name, json.string(value))]),
       )
     }
-
     IntEquals(field, value) -> {
-      let param_name = field <> "_param"
-      FilterCondition(
-        event_type: event_type,
-        filter_expr: "$." <> field <> " ? (@ == $" <> param_name <> ")",
+      let param_name = field <> "_param_" <> int.to_string(index)
+      FilterPart(
+        expression: "$." <> field <> " == $" <> param_name,
         params: dict.from_list([#(param_name, json.int(value))]),
       )
     }
-
     IntGreaterThan(field, value) -> {
-      let param_name = field <> "_param"
-      FilterCondition(
-        event_type: event_type,
-        filter_expr: "$." <> field <> " ? (@ > $" <> param_name <> ")",
+      let param_name = field <> "_param_" <> int.to_string(index)
+      FilterPart(
+        expression: "$." <> field <> " > $" <> param_name,
         params: dict.from_list([#(param_name, json.int(value))]),
       )
     }
-
     IntLessThan(field, value) -> {
-      let param_name = field <> "_param"
-      FilterCondition(
-        event_type: event_type,
-        filter_expr: "$." <> field <> " ? (@ < $" <> param_name <> ")",
+      let param_name = field <> "_param_" <> int.to_string(index)
+      FilterPart(
+        expression: "$." <> field <> " < $" <> param_name,
         params: dict.from_list([#(param_name, json.int(value))]),
       )
     }
-
     BoolEquals(field, value) -> {
-      let param_name = field <> "_param"
-      FilterCondition(
-        event_type: event_type,
-        filter_expr: "$." <> field <> " ? (@ == $" <> param_name <> ")",
+      let param_name = field <> "_param_" <> int.to_string(index)
+      FilterPart(
+        expression: "$." <> field <> " == $" <> param_name,
         params: dict.from_list([#(param_name, json.bool(value))]),
       )
     }
-
     FieldIsNull(field) -> {
-      FilterCondition(
-        event_type: event_type,
-        filter_expr: "$." <> field <> " ? (@.type() == \"null\")",
+      FilterPart(
+        expression: "$." <> field <> ".type() == \"null\"",
         params: dict.new(),
       )
     }

@@ -65,7 +65,7 @@ fn run_eunit_ffi(a: List(atom.Atom), b: List(EunitOption)) -> Result(Nil, a)
 ///   })
 /// }
 /// ```
-pub fn txn(callback: fn(pog.Connection) -> Nil) -> Nil {
+pub fn txn(callback: fn(pog.Connection) -> a) -> Nil {
   // Create minimal connection pool with size 1 for test
   let pool_name = process.new_name("test_pool")
   let assert Ok(_) = connection_pool.start_supervisor(pool_name, 1)

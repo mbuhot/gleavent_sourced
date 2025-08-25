@@ -49,8 +49,7 @@ pub fn append_events(
 - [x] Implement conflict detection logic in `append_events`
 - [x] Add helper function to convert events list to JSON array format
 - [x] Update all existing `append_events` call sites to provide empty filter + sequence 0
-- [x] Write test for successful batch insert (no conflicts)
-- [x] Write test for conflict detection (events added since last read)
-- [x] Write test for mixed scenario (demonstrates all-or-nothing batch behavior)
-- [x] Write test for empty events list with conflict filter
-- [x] Update existing tests to handle new function signature
+- [x] Consolidate tests into behavioral tests focused on core system behavior:
+  - `complete_ticket_lifecycle_test`: End-to-end event storage and retrieval
+  - `event_filtering_by_attributes_test`: Query events with various filter conditions
+  - `optimistic_concurrency_control_prevents_conflicts_test`: Concurrent modification prevention
