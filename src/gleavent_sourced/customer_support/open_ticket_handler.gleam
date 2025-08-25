@@ -1,9 +1,7 @@
 import gleam/dict
 import gleam/result
 import gleam/string
-import gleavent_sourced/command_handler.{
-  type CommandHandler, type CommandResult, CommandAccepted, CommandRejected,
-}
+import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_command_types.{
   type OpenTicketCommand, type TicketError, OpenTicketCommand, ValidationError,
 }

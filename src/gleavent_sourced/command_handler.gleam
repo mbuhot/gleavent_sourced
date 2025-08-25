@@ -1,4 +1,4 @@
-import gleam/dict.{type Dict}
+import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/json
 import gleam/result
@@ -15,7 +15,7 @@ pub type CommandHandler(command, event, context, error) {
     command_logic: fn(command, context) -> Result(List(event), error),
     event_mapper: fn(String, Dynamic) -> Result(event, String),
     event_converter: fn(event) -> #(String, json.Json),
-    metadata_generator: fn(command, context) -> Dict(String, String),
+    metadata_generator: fn(command, context) -> dict.Dict(String, String),
   )
 }
 
@@ -24,43 +24,6 @@ pub type CommandResult(event, error) {
   CommandAccepted(events: List(event))
   CommandRejected(error: error)
   CommandFailed(system_error: String)
-}
-
-// Command router for dispatching
-pub type CommandRouter(command, event, context, error) {
-  CommandRouter(
-    handlers: Dict(String, CommandHandler(command, event, context, error)),
-  )
-}
-
-// Create a new empty command router
-pub fn new() -> CommandRouter(command, event, context, error) {
-  CommandRouter(handlers: dict.new())
-}
-
-// Register a command handler with the router
-pub fn register_handler(
-  router: CommandRouter(command, event, context, error),
-  command_type: String,
-  handler: CommandHandler(command, event, context, error),
-) -> CommandRouter(command, event, context, error) {
-  CommandRouter(handlers: dict.insert(router.handlers, command_type, handler))
-}
-
-// Handle a command using the appropriate handler
-pub fn handle_command(
-  router: CommandRouter(command, event, context, error),
-  db: pog.Connection,
-  command_type: String,
-  command: command,
-) -> Result(CommandResult(event, error), String) {
-  case dict.get(router.handlers, command_type) {
-    Error(_) -> Error("Handler not found for command type: " <> command_type)
-    Ok(handler) -> {
-      // Retry loop for optimistic concurrency control
-      handle_with_retry(db, handler, command, 3)
-    }
-  }
 }
 
 fn load_events_and_build_context(
@@ -99,7 +62,7 @@ fn append_events_with_conflict_detection(
   |> result.map_error(fn(_) { "Failed to append events" })
 }
 
-// Internal function to handle command with retry logic
+// Public function to handle command with retry logic
 pub fn handle_with_retry(
   db: pog.Connection,
   handler: CommandHandler(command, event, context, error),
