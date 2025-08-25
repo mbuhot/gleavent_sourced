@@ -1,5 +1,6 @@
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
+import gleam/json
 import gleam/result
 import gleavent_sourced/event_filter.{type EventFilter}
 import gleavent_sourced/event_log
@@ -13,6 +14,8 @@ pub type CommandHandler(command, event, context, error) {
     initial_context: context,
     command_logic: fn(command, context) -> Result(List(event), error),
     event_mapper: fn(String, Dynamic) -> Result(event, String),
+    event_converter: fn(event) -> #(String, json.Json),
+    metadata_generator: fn(command, context) -> Dict(String, String),
   )
 }
 
@@ -52,23 +55,53 @@ pub fn handle_command(
   case dict.get(router.handlers, command_type) {
     Error(_) -> Error("Handler not found for command type: " <> command_type)
     Ok(handler) -> {
-      // 1. Create event filter from command
-      let filter = handler.event_filter(command)
+      // Retry loop for optimistic concurrency control
+      handle_with_retry(db, handler, command, 3)
+    }
+  }
+}
 
-      // 2. Load events from database
-      case event_log.query_events(db, filter, handler.event_mapper) {
-        Ok(#(loaded_events, _max_seq)) -> {
-          // 3. Build context from loaded events
-          let context = handler.context_reducer(loaded_events, handler.initial_context)
+// Internal function to handle command with retry logic
+fn handle_with_retry(
+  db: pog.Connection,
+  handler: CommandHandler(command, event, context, error),
+  command: command,
+  retries_left: Int,
+) -> Result(CommandResult(event, error), String) {
+  // 1. Create event filter from command
+  let filter = handler.event_filter(command)
 
-          // 4. Execute command logic with built context
-          case handler.command_logic(command, context) {
-            Ok(events) -> Ok(CommandAccepted(events))
-            Error(business_error) -> Ok(CommandRejected(business_error))
+  // 2. Load events from database
+  case event_log.query_events(db, filter, handler.event_mapper) {
+    Ok(#(loaded_events, max_seq)) -> {
+      // 3. Build context from loaded events
+      let context = handler.context_reducer(loaded_events, handler.initial_context)
+
+      // 4. Execute command logic with built context
+      case handler.command_logic(command, context) {
+        Ok(events) -> {
+          // 5. Append events with conflict detection
+          case event_log.append_events(
+            db,
+            events,
+            handler.event_converter,
+            handler.metadata_generator(command, context),
+            filter,
+            max_seq,
+          ) {
+            Ok(event_log.AppendSuccess) -> Ok(CommandAccepted(events))
+            Ok(event_log.AppendConflict(_count)) -> {
+              case retries_left {
+                0 -> Error("Maximum retries exceeded due to conflicts")
+                _ -> handle_with_retry(db, handler, command, retries_left - 1)
+              }
+            }
+            Error(_append_error) -> Error("Failed to append events")
           }
         }
-        Error(_query_error) -> Error("Failed to load events for command processing")
+        Error(business_error) -> Ok(CommandRejected(business_error))
       }
     }
+    Error(_query_error) -> Error("Failed to load events for command processing")
   }
 }
