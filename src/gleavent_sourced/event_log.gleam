@@ -30,6 +30,12 @@ pub type Event {
   )
 }
 
+/// Result type for append operations with optimistic concurrency control
+pub type AppendResult {
+  AppendSuccess
+  AppendConflict(conflict_count: Int)
+}
+
 pub fn connect(pool_name: process.Name(pog.Message)) -> pog.Connection {
   pog.named_connection(pool_name)
 }

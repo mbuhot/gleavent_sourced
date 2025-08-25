@@ -53,14 +53,20 @@ DATABASE_URL="postgres://username:password@host:port/database"
 
 ### PostgreSQL 17 pg_dump Wrapper
 
-Create `bin/pg_dump`:
+The project includes `bin/pg_dump` wrapper script:
 ```bash
 #!/bin/bash
 REAL_PG_DUMP="/opt/homebrew/opt/postgresql@17/bin/pg_dump"
 "$REAL_PG_DUMP" "$@" | grep -v '^\\restrict' | grep -v '^\\unrestrict'
 ```
 
-Add to PATH: `export PATH="$(pwd)/bin:$PATH"`
+And `bin/parrot` convenience script that automatically sets up the PATH:
+```bash
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$SCRIPT_DIR:$PATH"
+gleam run -m parrot "$@"
+```
 
 ## Writing SQL Queries
 
@@ -122,7 +128,7 @@ SELECT COUNT(*) as total FROM events;
 ### Running Parrot
 
 ```bash
-gleam run -m parrot
+./bin/parrot
 ```
 
 This generates `src/your_project/sql.gleam` with type-safe functions.
