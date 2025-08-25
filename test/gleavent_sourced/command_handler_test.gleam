@@ -26,7 +26,12 @@ pub type TestError {
 }
 
 pub type OpenTicketCommand {
-  OpenTicketCommand(ticket_id: String, title: String, description: String, priority: String)
+  OpenTicketCommand(
+    ticket_id: String,
+    title: String,
+    description: String,
+    priority: String,
+  )
 }
 
 pub type AssignTicketCommand {
@@ -39,24 +44,27 @@ pub fn main() {
 
 pub fn command_handler_type_creation_test() {
   // Create a simple command handler
-  let handler = command_handler.CommandHandler(
-    event_filter: fn(_command) { event_filter.new() },
-    context_reducer: fn(_events, context) { context },
-    initial_context: TicketContext(existing_tickets: []),
-    command_logic: fn(command, _context) {
-      case command {
-        OpenTicket(ticket_id, title) -> {
-          case title {
-            "" -> Error(ValidationError("Title cannot be empty"))
-            _ -> Ok([TicketOpened(ticket_id, title)])
+  let handler =
+    command_handler.CommandHandler(
+      event_filter: fn(_command) { event_filter.new() },
+      context_reducer: fn(_events, context) { context },
+      initial_context: TicketContext(existing_tickets: []),
+      command_logic: fn(command, _context) {
+        case command {
+          OpenTicket(ticket_id, title) -> {
+            case title {
+              "" -> Error(ValidationError("Title cannot be empty"))
+              _ -> Ok([TicketOpened(ticket_id, title)])
+            }
           }
         }
-      }
-    },
-    event_mapper: fn(_event_type, _payload) { Error("No events expected in this test") },
-    event_converter: fn(_event) { #("TestEvent", json.string("test")) },
-    metadata_generator: fn(_command, _context) { dict.new() },
-  )
+      },
+      event_mapper: fn(_event_type, _payload) {
+        Error("No events expected in this test")
+      },
+      event_converter: fn(_event) { #("TestEvent", json.string("test")) },
+      metadata_generator: fn(_command, _context) { dict.new() },
+    )
 
   // Test that the handler has the expected structure
   let initial_context = handler.initial_context
@@ -70,7 +78,8 @@ pub fn command_handler_type_creation_test() {
 
   // Test command logic with invalid input
   let invalid_command = OpenTicket("T-002", "")
-  let assert Error(ValidationError(message)) = handler.command_logic(invalid_command, context)
+  let assert Error(ValidationError(message)) =
+    handler.command_logic(invalid_command, context)
   let assert "Title cannot be empty" = message
 }
 
@@ -80,28 +89,37 @@ pub fn command_router_creation_and_registration_test() {
     let router = command_handler.new()
 
     // Create a test handler
-    let handler = command_handler.CommandHandler(
-      event_filter: fn(_command) { event_filter.new() },
-      context_reducer: fn(_events, context) { context },
-      initial_context: TicketContext(existing_tickets: []),
-      command_logic: fn(command, _context) {
-        case command {
-          OpenTicket(ticket_id, title) -> Ok([TicketOpened(ticket_id, title)])
-        }
-      },
-      event_mapper: fn(_event_type, _payload) { Error("No events expected in this test") },
-      event_converter: fn(_event) { #("TestEvent", json.string("test")) },
-      metadata_generator: fn(_command, _context) { dict.new() },
-    )
+    let handler =
+      command_handler.CommandHandler(
+        event_filter: fn(_command) { event_filter.new() },
+        context_reducer: fn(_events, context) { context },
+        initial_context: TicketContext(existing_tickets: []),
+        command_logic: fn(command, _context) {
+          case command {
+            OpenTicket(ticket_id, title) -> Ok([TicketOpened(ticket_id, title)])
+          }
+        },
+        event_mapper: fn(_event_type, _payload) {
+          Error("No events expected in this test")
+        },
+        event_converter: fn(_event) { #("TestEvent", json.string("test")) },
+        metadata_generator: fn(_command, _context) { dict.new() },
+      )
 
     // Register the handler
-    let updated_router = command_handler.register_handler(router, "OpenTicket", handler)
+    let updated_router =
+      command_handler.register_handler(router, "OpenTicket", handler)
 
     // Test behavior: dispatch a command through the registered handler
     // This will fail until we implement handle_command
     let test_command = OpenTicket("T-001", "Test registration")
     let assert Ok(command_handler.CommandAccepted(events)) =
-      command_handler.handle_command(updated_router, db, "OpenTicket", test_command)
+      command_handler.handle_command(
+        updated_router,
+        db,
+        "OpenTicket",
+        test_command,
+      )
 
     // Verify the handler executed its business logic correctly
     let assert [TicketOpened("T-001", "Test registration")] = events
@@ -113,44 +131,65 @@ pub fn command_rejection_scenarios_test() {
     // Create a router with a handler that validates commands
     let router = command_handler.new()
 
-    let validating_handler = command_handler.CommandHandler(
-      event_filter: fn(_command) { event_filter.new() },
-      context_reducer: fn(_events, context) { context },
-      initial_context: TicketContext(existing_tickets: []),
-      command_logic: fn(command, _context) {
-        case command {
-          OpenTicket(_ticket_id, title) -> {
-            case title {
-              "" -> Error(ValidationError("Title cannot be empty"))
-              "forbidden" -> Error(ValidationError("Forbidden title"))
-              _ -> Ok([TicketOpened("T-001", title)])
+    let validating_handler =
+      command_handler.CommandHandler(
+        event_filter: fn(_command) { event_filter.new() },
+        context_reducer: fn(_events, context) { context },
+        initial_context: TicketContext(existing_tickets: []),
+        command_logic: fn(command, _context) {
+          case command {
+            OpenTicket(_ticket_id, title) -> {
+              case title {
+                "" -> Error(ValidationError("Title cannot be empty"))
+                "forbidden" -> Error(ValidationError("Forbidden title"))
+                _ -> Ok([TicketOpened("T-001", title)])
+              }
             }
           }
-        }
-      },
-      event_mapper: fn(_event_type, _payload) { Error("No events expected in this test") },
-      event_converter: fn(_event) { #("TestEvent", json.string("test")) },
-      metadata_generator: fn(_command, _context) { dict.new() },
-    )
+        },
+        event_mapper: fn(_event_type, _payload) {
+          Error("No events expected in this test")
+        },
+        event_converter: fn(_event) { #("TestEvent", json.string("test")) },
+        metadata_generator: fn(_command, _context) { dict.new() },
+      )
 
-    let updated_router = command_handler.register_handler(router, "OpenTicket", validating_handler)
+    let updated_router =
+      command_handler.register_handler(router, "OpenTicket", validating_handler)
 
     // Test command rejection with empty title
     let empty_title_command = OpenTicket("T-001", "")
     let assert Ok(command_handler.CommandRejected(ValidationError(message))) =
-      command_handler.handle_command(updated_router, db, "OpenTicket", empty_title_command)
+      command_handler.handle_command(
+        updated_router,
+        db,
+        "OpenTicket",
+        empty_title_command,
+      )
     let assert "Title cannot be empty" = message
 
     // Test command rejection with forbidden title
     let forbidden_command = OpenTicket("T-002", "forbidden")
     let assert Ok(command_handler.CommandRejected(ValidationError(message))) =
-      command_handler.handle_command(updated_router, db, "OpenTicket", forbidden_command)
+      command_handler.handle_command(
+        updated_router,
+        db,
+        "OpenTicket",
+        forbidden_command,
+      )
     let assert "Forbidden title" = message
 
     // Test unknown command type
-    let unknown_result = command_handler.handle_command(updated_router, db, "UnknownCommand", OpenTicket("T-003", "test"))
+    let unknown_result =
+      command_handler.handle_command(
+        updated_router,
+        db,
+        "UnknownCommand",
+        OpenTicket("T-003", "test"),
+      )
     let assert Error(error_message) = unknown_result
-    let assert "Handler not found for command type: UnknownCommand" = error_message
+    let assert "Handler not found for command type: UnknownCommand" =
+      error_message
   })
 }
 
@@ -162,7 +201,7 @@ pub fn event_loading_and_context_building_test() {
         ticket_id: "T-001",
         title: "First ticket",
         description: "Existing ticket",
-        priority: "medium"
+        priority: "medium",
       ),
     ]
 
@@ -179,49 +218,75 @@ pub fn event_loading_and_context_building_test() {
       )
 
     // Create a command handler that loads events based on command parameters
-    let context_building_handler = command_handler.CommandHandler(
-      event_filter: fn(command) {
-        // Create filter based on command - this will load events for specific ticket
-        case command {
-          OpenTicketCommand(ticket_id, _, _, _) -> {
-            event_filter.new()
-            |> event_filter.for_type("TicketOpened", [
-              event_filter.attr_string("ticket_id", ticket_id),
-            ])
-          }
-        }
-      },
-      context_reducer: fn(events, _initial) {
-        // Build context from loaded events - count existing tickets with this ID
-        let ticket_count = list.length(events)
-        TicketContext(existing_tickets: list.repeat("existing", ticket_count))
-      },
-      initial_context: TicketContext(existing_tickets: []),
-      command_logic: fn(command, context) {
-        case command {
-          OpenTicketCommand(ticket_id, title, description, priority) -> {
-            // Business logic that depends on context: prevent duplicate ticket IDs
-            case list.length(context.existing_tickets) {
-              0 -> Ok([ticket_event.TicketOpened(ticket_id, title, description, priority)])
-              _ -> Error(ValidationError("Ticket ID already exists: " <> ticket_id))
+    let context_building_handler =
+      command_handler.CommandHandler(
+        event_filter: fn(command) {
+          // Create filter based on command - this will load events for specific ticket
+          case command {
+            OpenTicketCommand(ticket_id, _, _, _) -> {
+              event_filter.new()
+              |> event_filter.for_type("TicketOpened", [
+                event_filter.attr_string("ticket_id", ticket_id),
+              ])
             }
           }
-        }
-      },
-      event_mapper: ticket_event.ticket_event_mapper,
-      event_converter: ticket_event.ticket_event_to_type_and_payload,
-      metadata_generator: fn(_command, _context) { ticket_event.create_test_metadata() },
-    )
+        },
+        context_reducer: fn(events, _initial) {
+          // Build context from loaded events - count existing tickets with this ID
+          let ticket_count = list.length(events)
+          TicketContext(existing_tickets: list.repeat("existing", ticket_count))
+        },
+        initial_context: TicketContext(existing_tickets: []),
+        command_logic: fn(command, context) {
+          case command {
+            OpenTicketCommand(ticket_id, title, description, priority) -> {
+              // Business logic that depends on context: prevent duplicate ticket IDs
+              case list.length(context.existing_tickets) {
+                0 ->
+                  Ok([
+                    ticket_event.TicketOpened(
+                      ticket_id,
+                      title,
+                      description,
+                      priority,
+                    ),
+                  ])
+                _ ->
+                  Error(ValidationError(
+                    "Ticket ID already exists: " <> ticket_id,
+                  ))
+              }
+            }
+          }
+        },
+        event_mapper: ticket_event.ticket_event_mapper,
+        event_converter: ticket_event.ticket_event_to_type_and_payload,
+        metadata_generator: fn(_command, _context) {
+          ticket_event.create_test_metadata()
+        },
+      )
 
-    let router = command_handler.new()
-      |> command_handler.register_handler("OpenTicketCommand", context_building_handler)
+    let router =
+      command_handler.new()
+      |> command_handler.register_handler(
+        "OpenTicketCommand",
+        context_building_handler,
+      )
 
     // This should fail because T-001 already exists (based on loaded events)
-    let duplicate_command = OpenTicketCommand("T-001", "Duplicate ticket", "This should fail", "low")
-    let result = command_handler.handle_command(router, db, "OpenTicketCommand", duplicate_command)
+    let duplicate_command =
+      OpenTicketCommand("T-001", "Duplicate ticket", "This should fail", "low")
+    let result =
+      command_handler.handle_command(
+        router,
+        db,
+        "OpenTicketCommand",
+        duplicate_command,
+      )
 
     // This assertion will fail until we implement event loading
-    let assert Ok(command_handler.CommandRejected(ValidationError(message))) = result
+    let assert Ok(command_handler.CommandRejected(ValidationError(message))) =
+      result
     let assert "Ticket ID already exists: T-001" = message
   })
 }
@@ -229,12 +294,13 @@ pub fn event_loading_and_context_building_test() {
 pub fn optimistic_concurrency_conflict_detection_test() {
   test_runner.txn(fn(db) {
     // Store initial event to establish baseline
-    let initial_event = ticket_event.TicketOpened(
-      ticket_id: "T-100",
-      title: "Initial ticket",
-      description: "Test ticket for concurrency",
-      priority: "medium"
-    )
+    let initial_event =
+      ticket_event.TicketOpened(
+        ticket_id: "T-100",
+        title: "Initial ticket",
+        description: "Test ticket for concurrency",
+        priority: "medium",
+      )
 
     let test_metadata = ticket_event.create_test_metadata()
     let assert Ok(event_log.AppendSuccess) =
@@ -248,67 +314,82 @@ pub fn optimistic_concurrency_conflict_detection_test() {
       )
 
     // Create a handler that breaks convention by inserting event during business logic
-    let conflicting_handler = command_handler.CommandHandler(
-      event_filter: fn(command) {
-        case command {
-          AssignTicketCommand(ticket_id, _, _) -> {
-            event_filter.new()
-            |> event_filter.for_type("TicketOpened", [
-              event_filter.attr_string("ticket_id", ticket_id),
-            ])
-            |> event_filter.for_type("TicketAssigned", [
-              event_filter.attr_string("ticket_id", ticket_id),
-            ])
+    let conflicting_handler =
+      command_handler.CommandHandler(
+        event_filter: fn(command) {
+          case command {
+            AssignTicketCommand(ticket_id, _, _) -> {
+              event_filter.new()
+              |> event_filter.for_type("TicketOpened", [
+                event_filter.attr_string("ticket_id", ticket_id),
+              ])
+              |> event_filter.for_type("TicketAssigned", [
+                event_filter.attr_string("ticket_id", ticket_id),
+              ])
+            }
           }
-        }
-      },
-      context_reducer: fn(events, _initial) {
-        list.fold(events, None, fn(current_assignee, event) {
-          case event {
-            ticket_event.TicketAssigned(_, assignee, _) -> Some(assignee)
-            _ -> current_assignee
-          }
-        })
-      },
-      initial_context: None,
-      command_logic: fn(command, current_assignee) {
-        case command {
-          AssignTicketCommand(ticket_id, assignee, assigned_at) -> {
-            case current_assignee {
-              Some(existing) -> Error(ValidationError("Ticket already assigned to " <> existing))
-              None -> {
-                // BREAK CONVENTION: Insert conflicting event during business logic!
-                // This simulates a race condition where another process inserts an event
-                // between when we loaded context and when we try to append our events
-                let conflicting_assignment = ticket_event.TicketAssigned(
-                  ticket_id,
-                  "concurrent_user@example.com",
-                  "2024-01-01T09:59:00Z"
-                )
+        },
+        context_reducer: fn(events, _initial) {
+          list.fold(events, None, fn(current_assignee, event) {
+            case event {
+              ticket_event.TicketAssigned(_, assignee, _) -> Some(assignee)
+              _ -> current_assignee
+            }
+          })
+        },
+        initial_context: None,
+        command_logic: fn(command, current_assignee) {
+          case command {
+            AssignTicketCommand(ticket_id, assignee, assigned_at) -> {
+              case current_assignee {
+                Some(existing) ->
+                  Error(ValidationError(
+                    "Ticket already assigned to " <> existing,
+                  ))
+                None -> {
+                  // BREAK CONVENTION: Insert conflicting event during business logic!
+                  // This simulates a race condition where another process inserts an event
+                  // between when we loaded context and when we try to append our events
+                  let conflicting_assignment =
+                    ticket_event.TicketAssigned(
+                      ticket_id,
+                      "concurrent_user@example.com",
+                      "2024-01-01T09:59:00Z",
+                    )
 
-                let assert Ok(event_log.AppendSuccess) =
-                  event_log.append_events(
-                    db,
-                    [conflicting_assignment],
-                    ticket_event.ticket_event_to_type_and_payload,
-                    test_metadata,
-                    event_filter.new(), // No conflict check
-                    0,
-                  )
+                  let assert Ok(event_log.AppendSuccess) =
+                    event_log.append_events(
+                      db,
+                      [conflicting_assignment],
+                      ticket_event.ticket_event_to_type_and_payload,
+                      test_metadata,
+                      event_filter.new(),
+                      // No conflict check
+                      0,
+                    )
 
-                // Return our events - this should cause conflict detection!
-                Ok([ticket_event.TicketAssigned(ticket_id, assignee, assigned_at)])
+                  // Return our events - this should cause conflict detection!
+                  Ok([
+                    ticket_event.TicketAssigned(
+                      ticket_id,
+                      assignee,
+                      assigned_at,
+                    ),
+                  ])
+                }
               }
             }
           }
-        }
-      },
-      event_mapper: ticket_event.ticket_event_mapper,
-      event_converter: ticket_event.ticket_event_to_type_and_payload,
-      metadata_generator: fn(_command, _context) { ticket_event.create_test_metadata() },
-    )
+        },
+        event_mapper: ticket_event.ticket_event_mapper,
+        event_converter: ticket_event.ticket_event_to_type_and_payload,
+        metadata_generator: fn(_command, _context) {
+          ticket_event.create_test_metadata()
+        },
+      )
 
-    let router = command_handler.new()
+    let router =
+      command_handler.new()
       |> command_handler.register_handler("AssignTicket", conflicting_handler)
 
     // This command should:
@@ -317,10 +398,16 @@ pub fn optimistic_concurrency_conflict_detection_test() {
     // 3. Try to append its own events - CONFLICT DETECTED!
     // 4. Retry with fresh context
     // 5. See the conflicting assignment and reject the command
-    let test_command = AssignTicketCommand("T-100", "test_user@example.com", "2024-01-01T10:00:00Z")
+    let test_command =
+      AssignTicketCommand(
+        "T-100",
+        "test_user@example.com",
+        "2024-01-01T10:00:00Z",
+      )
 
     let assert Ok(command_handler.CommandRejected(ValidationError(message))) =
       command_handler.handle_command(router, db, "AssignTicket", test_command)
-    let assert "Ticket already assigned to concurrent_user@example.com" = message
+    let assert "Ticket already assigned to concurrent_user@example.com" =
+      message
   })
 }
