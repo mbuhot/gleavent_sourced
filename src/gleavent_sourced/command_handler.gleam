@@ -100,7 +100,7 @@ fn append_events_with_conflict_detection(
 }
 
 // Internal function to handle command with retry logic
-fn handle_with_retry(
+pub fn handle_with_retry(
   db: pog.Connection,
   handler: CommandHandler(command, event, context, error),
   command: command,

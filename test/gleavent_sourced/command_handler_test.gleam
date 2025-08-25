@@ -2,11 +2,15 @@ import gleam/dict
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/string
 import gleavent_sourced/command_handler
+import gleavent_sourced/customer_support/ticket_command_router
+import gleavent_sourced/customer_support/ticket_command_types
 import gleavent_sourced/customer_support/ticket_event
 import gleavent_sourced/event_filter
 import gleavent_sourced/event_log
 import gleavent_sourced/test_runner
+import pog
 
 // Example types for testing
 pub type TestCommand {
@@ -23,19 +27,6 @@ pub type TestContext {
 
 pub type TestError {
   ValidationError(message: String)
-}
-
-pub type OpenTicketCommand {
-  OpenTicketCommand(
-    ticket_id: String,
-    title: String,
-    description: String,
-    priority: String,
-  )
-}
-
-pub type AssignTicketCommand {
-  AssignTicketCommand(ticket_id: String, assignee: String, assigned_at: String)
 }
 
 pub fn main() {
@@ -223,7 +214,7 @@ pub fn event_loading_and_context_building_test() {
         event_filter: fn(command) {
           // Create filter based on command - this will load events for specific ticket
           case command {
-            OpenTicketCommand(ticket_id, _, _, _) -> {
+            ticket_command_types.OpenTicketCommand(ticket_id, _, _, _) -> {
               event_filter.new()
               |> event_filter.for_type("TicketOpened", [
                 event_filter.attr_string("ticket_id", ticket_id),
@@ -239,7 +230,12 @@ pub fn event_loading_and_context_building_test() {
         initial_context: TicketContext(existing_tickets: []),
         command_logic: fn(command, context) {
           case command {
-            OpenTicketCommand(ticket_id, title, description, priority) -> {
+            ticket_command_types.OpenTicketCommand(
+              ticket_id,
+              title,
+              description,
+              priority,
+            ) -> {
               // Business logic that depends on context: prevent duplicate ticket IDs
               case list.length(context.existing_tickets) {
                 0 ->
@@ -275,7 +271,12 @@ pub fn event_loading_and_context_building_test() {
 
     // This should fail because T-001 already exists (based on loaded events)
     let duplicate_command =
-      OpenTicketCommand("T-001", "Duplicate ticket", "This should fail", "low")
+      ticket_command_types.OpenTicketCommand(
+        "T-001",
+        "Duplicate ticket",
+        "This should fail",
+        "low",
+      )
     let result =
       command_handler.handle_command(
         router,
@@ -288,6 +289,56 @@ pub fn event_loading_and_context_building_test() {
     let assert Ok(command_handler.CommandRejected(ValidationError(message))) =
       result
     let assert "Ticket ID already exists: T-001" = message
+  })
+}
+
+pub fn open_ticket_command_validation_test() {
+  test_runner.txn(fn(db) {
+    // Test successful ticket creation
+    let valid_command =
+      ticket_command_router.OpenTicket(ticket_command_types.OpenTicketCommand(
+        "T-500",
+        "Fix login bug",
+        "Users cannot login",
+        "high",
+      ))
+    let assert Ok(command_handler.CommandAccepted(events)) =
+      ticket_command_router.handle_ticket_command(valid_command, db)
+    let assert [
+      ticket_event.TicketOpened(
+        "T-500",
+        "Fix login bug",
+        "Users cannot login",
+        "high",
+      ),
+    ] = events
+
+    // Test validation errors
+    let empty_title_command =
+      ticket_command_router.OpenTicket(ticket_command_types.OpenTicketCommand(
+        "T-501",
+        "",
+        "Description",
+        "medium",
+      ))
+    let assert Ok(command_handler.CommandRejected(ticket_command_types.ValidationError(
+      message,
+    ))) = ticket_command_router.handle_ticket_command(empty_title_command, db)
+    let assert "Title cannot be empty" = message
+
+    // Test invalid priority
+    let invalid_priority_command =
+      ticket_command_router.OpenTicket(ticket_command_types.OpenTicketCommand(
+        "T-502",
+        "Test ticket",
+        "Description",
+        "urgent",
+      ))
+    let assert Ok(command_handler.CommandRejected(ticket_command_types.ValidationError(
+      message,
+    ))) =
+      ticket_command_router.handle_ticket_command(invalid_priority_command, db)
+    let assert "Priority must be one of: low, medium, high, critical" = message
   })
 }
 
@@ -318,7 +369,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
       command_handler.CommandHandler(
         event_filter: fn(command) {
           case command {
-            AssignTicketCommand(ticket_id, _, _) -> {
+            ticket_command_types.AssignTicketCommand(ticket_id, _, _) -> {
               event_filter.new()
               |> event_filter.for_type("TicketOpened", [
                 event_filter.attr_string("ticket_id", ticket_id),
@@ -340,7 +391,11 @@ pub fn optimistic_concurrency_conflict_detection_test() {
         initial_context: None,
         command_logic: fn(command, current_assignee) {
           case command {
-            AssignTicketCommand(ticket_id, assignee, assigned_at) -> {
+            ticket_command_types.AssignTicketCommand(
+              ticket_id,
+              assignee,
+              assigned_at,
+            ) -> {
               case current_assignee {
                 Some(existing) ->
                   Error(ValidationError(
@@ -399,7 +454,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
     // 4. Retry with fresh context
     // 5. See the conflicting assignment and reject the command
     let test_command =
-      AssignTicketCommand(
+      ticket_command_types.AssignTicketCommand(
         "T-100",
         "test_user@example.com",
         "2024-01-01T10:00:00Z",
