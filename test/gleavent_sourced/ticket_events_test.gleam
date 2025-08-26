@@ -361,7 +361,11 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       ])
 
     let assert Ok(#(final_events, _)) =
-      event_log.query_events(db, final_filter, ticket_events.ticket_event_mapper)
+      event_log.query_events(
+        db,
+        final_filter,
+        ticket_events.ticket_event_mapper,
+      )
 
     // Should have only 2 events: initial + Process B's assignment
     let assert 2 = list.length(final_events)

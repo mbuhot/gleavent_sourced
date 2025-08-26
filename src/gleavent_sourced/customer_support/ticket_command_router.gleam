@@ -1,5 +1,6 @@
 import gleavent_sourced/command_handler.{type CommandResult}
 import gleavent_sourced/customer_support/assign_ticket_handler
+import gleavent_sourced/customer_support/close_ticket_handler
 import gleavent_sourced/customer_support/open_ticket_handler
 import gleavent_sourced/customer_support/ticket_commands.{
   type AssignTicketCommand, type CloseTicketCommand, type OpenTicketCommand,
@@ -29,9 +30,9 @@ pub fn handle_ticket_command(
       let handler = assign_ticket_handler.create_assign_ticket_handler()
       command_handler.execute(db, handler, assign_cmd, 3)
     }
-    CloseTicket(_close_cmd) -> {
-      // TODO: implement close ticket handler
-      Error("CloseTicket not implemented yet")
+    CloseTicket(close_cmd) -> {
+      let handler = close_ticket_handler.create_close_ticket_handler()
+      command_handler.execute(db, handler, close_cmd, 3)
     }
   }
 }

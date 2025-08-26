@@ -3,7 +3,7 @@ import gleam/result
 import gleam/string
 import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
-  type OpenTicketCommand, type TicketError, OpenTicketCommand, ValidationError,
+  type OpenTicketCommand, type TicketError, ValidationError,
 }
 import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/event_filter
@@ -25,25 +25,23 @@ pub fn create_open_ticket_handler() -> CommandHandler(
       Nil
     },
     initial_context: Nil,
-    command_logic: fn(command, _context) {
-      case command {
-        OpenTicketCommand(ticket_id, title, description, priority) -> {
-          validate_open_ticket_command(ticket_id, title, description, priority)
-        }
-      }
+    command_logic: fn(command: OpenTicketCommand, _context) {
+      validate_open_ticket_command(
+        command.ticket_id,
+        command.title,
+        command.description,
+        command.priority,
+      )
     },
     event_mapper: ticket_events.ticket_event_mapper,
     event_converter: ticket_events.ticket_event_to_type_and_payload,
-    metadata_generator: fn(command, _context) {
-      case command {
-        OpenTicketCommand(ticket_id, _, _, _) ->
-          dict.from_list([
-            #("command_type", "OpenTicket"),
-            #("ticket_id", ticket_id),
-            #("source", "ticket_service"),
-            #("version", "1"),
-          ])
-      }
+    metadata_generator: fn(command: OpenTicketCommand, _context) {
+      dict.from_list([
+        #("command_type", "OpenTicket"),
+        #("ticket_id", command.ticket_id),
+        #("source", "ticket_service"),
+        #("version", "1"),
+      ])
     },
   )
 }

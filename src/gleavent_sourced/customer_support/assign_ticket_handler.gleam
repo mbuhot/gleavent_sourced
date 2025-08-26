@@ -4,8 +4,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
-  type AssignTicketCommand, type TicketError, AssignTicketCommand,
-  BusinessRuleViolation,
+  type AssignTicketCommand, type TicketError, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/event_filter
@@ -27,54 +26,34 @@ pub fn create_assign_ticket_handler() -> CommandHandler(
   TicketError,
 ) {
   command_handler.CommandHandler(
-    event_filter: fn(command) {
-      case command {
-        AssignTicketCommand(ticket_id, _, _) -> {
-          // Load events for the specific ticket to build context
-          event_filter.new()
-          |> event_filter.for_type("TicketOpened", [
-            event_filter.attr_string("ticket_id", ticket_id),
-          ])
-          |> event_filter.for_type("TicketAssigned", [
-            event_filter.attr_string("ticket_id", ticket_id),
-          ])
-          |> event_filter.for_type("TicketClosed", [
-            event_filter.attr_string("ticket_id", ticket_id),
-          ])
-        }
-      }
-    },
-    context_reducer: fn(events, _initial) {
-      // Fold events to build current ticket state
-      list.fold(events, initial_context(), fn(context, event) {
-        case event {
-          ticket_events.TicketOpened(..) ->
-            TicketAssignmentContext(..context, exists: True)
-          ticket_events.TicketAssigned(_, assignee, _) ->
-            TicketAssignmentContext(..context, current_assignee: Some(assignee))
-          ticket_events.TicketClosed(..) ->
-            TicketAssignmentContext(..context, is_closed: True)
-        }
-      })
-    },
+    event_filter: event_filter,
+    context_reducer: reducer,
     initial_context: initial_context(),
-    command_logic: fn(command, context) {
-      validate_assignment(
-        command.ticket_id,
-        command.assignee,
-        command.assigned_at,
-        context,
-      )
-    },
+    command_logic: execute,
     event_mapper: ticket_events.ticket_event_mapper,
     event_converter: ticket_events.ticket_event_to_type_and_payload,
-    metadata_generator: fn(_command, _context) {
-      dict.from_list([
-        #("source", "ticket_service"),
-        #("version", "1"),
-      ])
-    },
-  )
+    metadata_generator: metadata)
+}
+
+fn event_filter(command: AssignTicketCommand) -> event_filter.EventFilter {
+  let id_filter = event_filter.attr_string("ticket_id", command.ticket_id)
+  event_filter.new()
+  |> event_filter.for_type("TicketOpened", [id_filter])
+  |> event_filter.for_type("TicketAssigned", [id_filter])
+  |> event_filter.for_type("TicketClosed", [id_filter])
+}
+
+fn reducer(events, initial) {
+  list.fold(events, initial, fn(context, event) {
+    case event {
+      ticket_events.TicketOpened(..) ->
+        TicketAssignmentContext(..context, exists: True)
+      ticket_events.TicketAssigned(_, assignee, _) ->
+        TicketAssignmentContext(..context, current_assignee: Some(assignee))
+      ticket_events.TicketClosed(..) ->
+        TicketAssignmentContext(..context, is_closed: True)
+    }
+  })
 }
 
 fn initial_context() -> TicketAssignmentContext {
@@ -85,19 +64,13 @@ fn initial_context() -> TicketAssignmentContext {
   )
 }
 
-// Validation logic for AssignTicket command
-fn validate_assignment(
-  ticket_id: String,
-  assignee: String,
-  assigned_at: String,
-  context: TicketAssignmentContext,
-) -> Result(List(ticket_events.TicketEvent), TicketError) {
+fn execute(command: AssignTicketCommand, context) {
   use _ <- result.try(validate_ticket_exists(context))
   use _ <- result.try(validate_ticket_not_closed(context))
-  use _ <- result.try(validate_not_already_assigned(context, assignee))
-  use _ <- result.try(validate_assignee(assignee))
-  use _ <- result.try(validate_assigned_at(assigned_at))
-  Ok([ticket_events.TicketAssigned(ticket_id, assignee, assigned_at)])
+  use _ <- result.try(validate_not_already_assigned(context, command.assignee))
+  use _ <- result.try(validate_assignee(command.assignee))
+  use _ <- result.try(validate_assigned_at(command.assigned_at))
+  Ok([ticket_events.TicketAssigned(command.ticket_id, command.assignee, command.assigned_at)])
 }
 
 fn validate_ticket_exists(
@@ -150,4 +123,11 @@ fn validate_assigned_at(assigned_at: String) -> Result(Nil, TicketError) {
     "" -> Error(BusinessRuleViolation("Assigned at cannot be empty"))
     _ -> Ok(Nil)
   }
+}
+
+fn metadata(_command, _context) {
+  dict.from_list([
+    #("source", "ticket_service"),
+    #("version", "1"),
+  ])
 }

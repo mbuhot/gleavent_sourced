@@ -135,13 +135,11 @@ pub fn context_building_with_assign_ticket_test() {
 
     // Test that assignment works with proper context building
     let assign_command =
-      ticket_command_router.AssignTicket(
-        ticket_commands.AssignTicketCommand(
-          "T-001",
-          "alice@example.com",
-          "2024-01-01T10:00:00Z",
-        ),
-      )
+      ticket_command_router.AssignTicket(ticket_commands.AssignTicketCommand(
+        "T-001",
+        "alice@example.com",
+        "2024-01-01T10:00:00Z",
+      ))
     let assert Ok(CommandAccepted(events)) =
       ticket_command_router.handle_ticket_command(assign_command, db)
     let assert [
@@ -154,16 +152,13 @@ pub fn context_building_with_assign_ticket_test() {
 
     // Test that context building prevents double assignment
     let double_assign_command =
-      ticket_command_router.AssignTicket(
-        ticket_commands.AssignTicketCommand(
-          "T-001",
-          "bob@example.com",
-          "2024-01-01T11:00:00Z",
-        ),
-      )
-    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(
-      message,
-    ))) = ticket_command_router.handle_ticket_command(double_assign_command, db)
+      ticket_command_router.AssignTicket(ticket_commands.AssignTicketCommand(
+        "T-001",
+        "bob@example.com",
+        "2024-01-01T11:00:00Z",
+      ))
+    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(message))) =
+      ticket_command_router.handle_ticket_command(double_assign_command, db)
     assert message == "Ticket already assigned to alice@example.com"
   })
 }
@@ -246,13 +241,11 @@ pub fn assign_ticket_handler_with_context_building_test() {
 
     // Test successful assignment to unassigned ticket
     let assign_command =
-      ticket_command_router.AssignTicket(
-        ticket_commands.AssignTicketCommand(
-          "T-200",
-          "alice@example.com",
-          "2024-01-01T10:00:00Z",
-        ),
-      )
+      ticket_command_router.AssignTicket(ticket_commands.AssignTicketCommand(
+        "T-200",
+        "alice@example.com",
+        "2024-01-01T10:00:00Z",
+      ))
 
     let assert Ok(CommandAccepted(events)) =
       ticket_command_router.handle_ticket_command(assign_command, db)
@@ -266,34 +259,127 @@ pub fn assign_ticket_handler_with_context_building_test() {
 
     // Test assignment to already assigned ticket (should fail)
     let double_assign_command =
-      ticket_command_router.AssignTicket(
-        ticket_commands.AssignTicketCommand(
-          "T-200",
-          "bob@example.com",
-          "2024-01-01T11:00:00Z",
-        ),
-      )
+      ticket_command_router.AssignTicket(ticket_commands.AssignTicketCommand(
+        "T-200",
+        "bob@example.com",
+        "2024-01-01T11:00:00Z",
+      ))
 
-    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(
-      message,
-    ))) = ticket_command_router.handle_ticket_command(double_assign_command, db)
+    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(message))) =
+      ticket_command_router.handle_ticket_command(double_assign_command, db)
     assert message == "Ticket already assigned to alice@example.com"
 
     // Test assignment to non-existent ticket (should fail)
     let missing_ticket_command =
-      ticket_command_router.AssignTicket(
-        ticket_commands.AssignTicketCommand(
-          "T-999",
-          "charlie@example.com",
-          "2024-01-01T12:00:00Z",
-        ),
-      )
+      ticket_command_router.AssignTicket(ticket_commands.AssignTicketCommand(
+        "T-999",
+        "charlie@example.com",
+        "2024-01-01T12:00:00Z",
+      ))
 
-    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(
-      message,
-    ))) =
+    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(message))) =
       ticket_command_router.handle_ticket_command(missing_ticket_command, db)
     assert message == "Ticket does not exist"
+  })
+}
+
+pub fn close_ticket_handler_with_stateful_business_rules_test() {
+  test_runner.txn(fn(db) {
+    // Create initial ticket
+    let create_command =
+      ticket_command_router.OpenTicket(ticket_commands.OpenTicketCommand(
+        "T-300",
+        "High priority bug",
+        "Critical system issue",
+        "high",
+      ))
+    let assert Ok(CommandAccepted(_events)) =
+      ticket_command_router.handle_ticket_command(create_command, db)
+
+    // Assign the ticket
+    let assign_command =
+      ticket_command_router.AssignTicket(ticket_commands.AssignTicketCommand(
+        "T-300",
+        "alice@example.com",
+        "2024-01-01T10:00:00Z",
+      ))
+    let assert Ok(CommandAccepted(_events)) =
+      ticket_command_router.handle_ticket_command(assign_command, db)
+
+    // Test successful close with valid permissions and resolution
+    let close_command =
+      ticket_command_router.CloseTicket(ticket_commands.CloseTicketCommand(
+        "T-300",
+        "Fixed by implementing proper error handling and adding validation checks",
+        "2024-01-01T15:00:00Z",
+        "alice@example.com",
+      ))
+    let assert Ok(CommandAccepted(events)) =
+      ticket_command_router.handle_ticket_command(close_command, db)
+    let assert [ticket_events.TicketClosed("T-300", _, "2024-01-01T15:00:00Z")] =
+      events
+
+    // Test closing non-existent ticket
+    let missing_ticket_command =
+      ticket_command_router.CloseTicket(ticket_commands.CloseTicketCommand(
+        "T-999",
+        "Fixed",
+        "2024-01-01T16:00:00Z",
+        "alice@example.com",
+      ))
+    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(message))) =
+      ticket_command_router.handle_ticket_command(missing_ticket_command, db)
+    assert message == "Ticket does not exist"
+
+    // Create a second high priority ticket to test resolution validation
+    let create_command2 =
+      ticket_command_router.OpenTicket(ticket_commands.OpenTicketCommand(
+        "T-301",
+        "Another high priority bug",
+        "System crash",
+        "high",
+      ))
+    let assert Ok(CommandAccepted(_events)) =
+      ticket_command_router.handle_ticket_command(create_command2, db)
+
+    // Assign the second ticket
+    let assign_command2 =
+      ticket_command_router.AssignTicket(ticket_commands.AssignTicketCommand(
+        "T-301",
+        "bob@example.com",
+        "2024-01-01T11:00:00Z",
+      ))
+    let assert Ok(CommandAccepted(_events)) =
+      ticket_command_router.handle_ticket_command(assign_command2, db)
+
+    // Test closing with insufficient resolution for high priority
+    let insufficient_resolution_command =
+      ticket_command_router.CloseTicket(ticket_commands.CloseTicketCommand(
+        "T-301",
+        "Fixed",
+        "2024-01-01T16:00:00Z",
+        "bob@example.com",
+      ))
+    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(message))) =
+      ticket_command_router.handle_ticket_command(
+        insufficient_resolution_command,
+        db,
+      )
+    assert message
+      == "High priority tickets require detailed resolution (minimum 20 characters)"
+
+    // Test closing by wrong person on the second ticket
+    let wrong_closer_command =
+      ticket_command_router.CloseTicket(ticket_commands.CloseTicketCommand(
+        "T-301",
+        "Fixed the issue completely with proper testing and validation",
+        "2024-01-01T16:00:00Z",
+        "charlie@example.com",
+      ))
+    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(message))) =
+      ticket_command_router.handle_ticket_command(wrong_closer_command, db)
+    assert message
+      == "Only the assignee (bob@example.com) can close this ticket"
   })
 }
 
@@ -393,9 +479,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
         },
         event_mapper: ticket_events.ticket_event_mapper,
         event_converter: ticket_events.ticket_event_to_type_and_payload,
-        metadata_generator: fn(_command, _context) {
-          create_test_metadata()
-        },
+        metadata_generator: fn(_command, _context) { create_test_metadata() },
       )
 
     // This command should:
@@ -412,12 +496,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
       )
 
     let assert Ok(CommandRejected(ValidationError(message))) =
-      command_handler.execute(
-        db,
-        conflicting_handler,
-        test_command,
-        3,
-      )
+      command_handler.execute(db, conflicting_handler, test_command, 3)
     assert message == "Ticket already assigned to concurrent_user@example.com"
   })
 }
