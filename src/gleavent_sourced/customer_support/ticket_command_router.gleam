@@ -1,11 +1,11 @@
 import gleavent_sourced/command_handler.{type CommandResult}
 import gleavent_sourced/customer_support/assign_ticket_handler
 import gleavent_sourced/customer_support/open_ticket_handler
-import gleavent_sourced/customer_support/ticket_command_types.{
+import gleavent_sourced/customer_support/ticket_commands.{
   type AssignTicketCommand, type CloseTicketCommand, type OpenTicketCommand,
   type TicketError,
 }
-import gleavent_sourced/customer_support/ticket_event
+import gleavent_sourced/customer_support/ticket_events
 import pog
 
 // Union type for all ticket commands
@@ -19,15 +19,15 @@ pub type TicketCommand {
 pub fn handle_ticket_command(
   command: TicketCommand,
   db: pog.Connection,
-) -> Result(CommandResult(ticket_event.TicketEvent, TicketError), String) {
+) -> Result(CommandResult(ticket_events.TicketEvent, TicketError), String) {
   case command {
     OpenTicket(open_cmd) -> {
       let handler = open_ticket_handler.create_open_ticket_handler()
-      command_handler.handle_with_retry(db, handler, open_cmd, 3)
+      command_handler.execute(db, handler, open_cmd, 3)
     }
     AssignTicket(assign_cmd) -> {
       let handler = assign_ticket_handler.create_assign_ticket_handler()
-      command_handler.handle_with_retry(db, handler, assign_cmd, 3)
+      command_handler.execute(db, handler, assign_cmd, 3)
     }
     CloseTicket(_close_cmd) -> {
       // TODO: implement close ticket handler

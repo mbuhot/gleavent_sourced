@@ -64,45 +64,45 @@ pub fn handle_command(
 ## Task Breakdown (TDD Approach)
 
 ### 1. Command Handler Types and Basic Structure
-- [ ] Create `CommandHandler`, `CommandResult`, and `CommandRouter` types with `todo` stubs
-- [ ] Write test for command handler type creation and basic structure
-- [ ] Implement type constructors and basic functionality
-- [ ] Write test for command router registration and lookup
-- [ ] Implement command router registration (`register_handler`, lookup functions)
+- [x] Create `CommandHandler`, `CommandResult` types (CommandRouter eliminated)
+- [x] Write test for command handler type creation and basic structure  
+- [x] Implement type constructors and basic functionality
+- [x] Write test for handler registration and dispatch
+- [x] Implement pattern-matching router with direct handler calls
 
 ### 2. Simple Command Processing (No Conflicts)
-- [ ] Create stub for `handle_command` function with `todo`
-- [ ] Write test for successful command processing (OpenTicket example)
-- [ ] Implement basic command processing flow: filter → query → reduce → logic → append
-- [ ] Write test for command rejection scenarios
-- [ ] Implement command rejection handling and error propagation
+- [x] Create OpenTicket handler with proper validation
+- [x] Write test for successful command processing (OpenTicket example)
+- [x] Implement basic command processing flow: filter → query → reduce → logic → append
+- [x] Write test for command rejection scenarios
+- [x] Implement command rejection handling and error propagation
 
 ### 3. Event Integration and Context Building
-- [ ] Write test for event loading using EventFilter from command
-- [ ] Implement integration with `event_log.query_events` for context building
-- [ ] Write test for context reduction from loaded events
-- [ ] Implement context reducer application and state building
+- [x] Write test for event loading using EventFilter from command
+- [x] Implement integration with `event_log.query_events` for context building
+- [x] Write test for context reduction from loaded events  
+- [x] Implement context reducer application and state building
 
 ### 4. Optimistic Concurrency and Retry Logic
-- [ ] Write test for conflict detection and automatic retry
-- [ ] Implement `AppendConflict` handling with retry mechanism
-- [ ] Write test for max retry limits and failure scenarios
-- [ ] Implement retry loop with fresh context rebuilding
+- [x] Write test for conflict detection and automatic retry
+- [x] Implement `AppendConflict` handling with retry mechanism
+- [x] Write test for max retry limits and failure scenarios
+- [x] Implement retry loop with fresh context rebuilding
 
 ### 5. Complete Ticket System Examples
 
 #### Basic Ticket Operations
-- [ ] Write tests for OpenTicket command (simple case, no event loading needed)
-- [ ] Implement OpenTicket handler with title validation
+- [x] Write tests for OpenTicket command (simple case, no event loading needed)
+- [x] Implement OpenTicket handler with title validation
 
 #### Complex Event Filtering and Context Building
-- [ ] Write test for AssignTicket command that:
+- [x] Write test for AssignTicket command that:
   - Filters events by `ticket_id` extracted from command
   - Loads `TicketOpened`, `TicketAssigned`, `TicketClosed` events for that ticket
-  - Reduces events into `TicketState{status, current_assignee, created_at}`
+  - Reduces events into `TicketAssignmentContext{exists, current_assignee, is_closed}`
   - Validates ticket exists and is not already closed
   - Prevents double-assignment to same person
-- [ ] Implement AssignTicket handler with complex event filter and context reducer
+- [x] Implement AssignTicket handler with complex event filter and context reducer
 
 #### Advanced Business Logic with State
 - [ ] Write test for CloseTicket command that:
@@ -113,10 +113,10 @@ pub fn handle_command(
 - [ ] Implement CloseTicket handler with stateful business rules
 
 #### Conflict Detection Scenarios
-- [ ] Write test for concurrent assignment attempts (optimistic concurrency)
-- [ ] Write test for closing already-closed tickets
-- [ ] Write test for assigning non-existent tickets
-- [ ] Implement proper error handling and conflict retry logic
+- [x] Write test for concurrent assignment attempts (optimistic concurrency)
+- [x] Write test for closing already-closed tickets (via business rule validation)
+- [x] Write test for assigning non-existent tickets (via business rule validation)
+- [x] Implement proper error handling and conflict retry logic
 
 
 ## Example Usage

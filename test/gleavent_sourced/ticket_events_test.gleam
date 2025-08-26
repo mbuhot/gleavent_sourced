@@ -1,5 +1,6 @@
+import gleam/dict
 import gleam/list
-import gleavent_sourced/customer_support/ticket_event
+import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/event_filter
 import gleavent_sourced/event_log
 import gleavent_sourced/test_runner
@@ -8,36 +9,43 @@ pub fn main() {
   test_runner.run_eunit(["gleavent_sourced/ticket_events_test"])
 }
 
+pub fn create_test_metadata() -> dict.Dict(String, String) {
+  dict.from_list([
+    #("source", "ticket_service"),
+    #("version", "1"),
+  ])
+}
+
 pub fn complete_ticket_lifecycle_test() {
   test_runner.txn(fn(db) {
     // Test complete ticket lifecycle: open -> assign -> close
     let ticket_events = [
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-001",
         title: "Fix login bug",
         description: "Users cannot log in with special characters",
         priority: "high",
       ),
-      ticket_event.TicketAssigned(
+      ticket_events.TicketAssigned(
         ticket_id: "T-001",
         assignee: "john.doe@example.com",
         assigned_at: "2024-01-15T10:30:00Z",
       ),
-      ticket_event.TicketClosed(
+      ticket_events.TicketClosed(
         ticket_id: "T-001",
         resolution: "Fixed character encoding in login form",
         closed_at: "2024-01-16T14:45:00Z",
       ),
     ]
 
-    let test_metadata = ticket_event.create_test_metadata()
+    let test_metadata = create_test_metadata()
 
     // Store ticket events
     let assert Ok(event_log.AppendSuccess) =
       event_log.append_events(
         db,
         ticket_events,
-        ticket_event.ticket_event_to_type_and_payload,
+        ticket_events.ticket_event_to_type_and_payload,
         test_metadata,
         event_filter.new(),
         0,
@@ -60,7 +68,7 @@ pub fn complete_ticket_lifecycle_test() {
       event_log.query_events(
         db,
         ticket_filter,
-        ticket_event.ticket_event_mapper,
+        ticket_events.ticket_event_mapper,
       )
 
     // Verify complete lifecycle: all 3 events stored and retrieved correctly
@@ -70,9 +78,9 @@ pub fn complete_ticket_lifecycle_test() {
     let event_types =
       list.map(events, fn(event) {
         case event {
-          ticket_event.TicketOpened(..) -> "TicketOpened"
-          ticket_event.TicketAssigned(..) -> "TicketAssigned"
-          ticket_event.TicketClosed(..) -> "TicketClosed"
+          ticket_events.TicketOpened(..) -> "TicketOpened"
+          ticket_events.TicketAssigned(..) -> "TicketAssigned"
+          ticket_events.TicketClosed(..) -> "TicketClosed"
         }
       })
     let assert True = list.contains(event_types, "TicketOpened")
@@ -85,7 +93,7 @@ pub fn event_filtering_by_attributes_test() {
   test_runner.txn(fn(db) {
     // Create tickets with different attributes to test filtering
     let high_priority_ticket =
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-100",
         title: "Critical system down",
         description: "Production system is offline",
@@ -93,7 +101,7 @@ pub fn event_filtering_by_attributes_test() {
       )
 
     let medium_priority_ticket =
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-101",
         title: "Minor UI issue",
         description: "Button alignment is off",
@@ -101,13 +109,13 @@ pub fn event_filtering_by_attributes_test() {
       )
 
     let assignment =
-      ticket_event.TicketAssigned(
+      ticket_events.TicketAssigned(
         ticket_id: "T-100",
         assignee: "senior.dev@example.com",
         assigned_at: "2024-01-01T09:00:00Z",
       )
 
-    let test_metadata = ticket_event.create_test_metadata()
+    let test_metadata = create_test_metadata()
     let all_events = [high_priority_ticket, medium_priority_ticket, assignment]
 
     // Store events
@@ -115,7 +123,7 @@ pub fn event_filtering_by_attributes_test() {
       event_log.append_events(
         db,
         all_events,
-        ticket_event.ticket_event_to_type_and_payload,
+        ticket_events.ticket_event_to_type_and_payload,
         test_metadata,
         event_filter.new(),
         0,
@@ -132,13 +140,13 @@ pub fn event_filtering_by_attributes_test() {
       event_log.query_events(
         db,
         high_priority_filter,
-        ticket_event.ticket_event_mapper,
+        ticket_events.ticket_event_mapper,
       )
 
     // Should find only the high priority ticket
     let assert 1 = list.length(events)
     let assert [
-      ticket_event.TicketOpened(ticket_id: "T-100", priority: "high", ..),
+      ticket_events.TicketOpened(ticket_id: "T-100", priority: "high", ..),
     ] = events
 
     // Test multi-condition filtering: high priority OR T-100 assignments
@@ -155,7 +163,7 @@ pub fn event_filtering_by_attributes_test() {
       event_log.query_events(
         db,
         complex_filter,
-        ticket_event.ticket_event_mapper,
+        ticket_events.ticket_event_mapper,
       )
 
     // Should find both the high priority ticket and the assignment
@@ -173,13 +181,13 @@ pub fn event_filtering_by_attributes_test() {
       event_log.query_events(
         db,
         multi_attr_filter,
-        ticket_event.ticket_event_mapper,
+        ticket_events.ticket_event_mapper,
       )
 
     // Should find only the T-100 high priority ticket (both conditions must match)
     let assert 1 = list.length(multi_attr_events)
     let assert [
-      ticket_event.TicketOpened(ticket_id: "T-100", priority: "high", ..),
+      ticket_events.TicketOpened(ticket_id: "T-100", priority: "high", ..),
     ] = multi_attr_events
   })
 }
@@ -188,7 +196,7 @@ pub fn multiple_attribute_filters_behavior_test() {
   test_runner.txn(fn(db) {
     // Create tickets to test AND vs OR behavior with multiple attributes
     let ticket_high_t100 =
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-100",
         title: "High priority T-100",
         description: "Matches both priority=high AND ticket_id=T-100",
@@ -196,7 +204,7 @@ pub fn multiple_attribute_filters_behavior_test() {
       )
 
     let ticket_high_t200 =
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-200",
         title: "High priority T-200",
         description: "Matches priority=high but NOT ticket_id=T-100",
@@ -204,14 +212,14 @@ pub fn multiple_attribute_filters_behavior_test() {
       )
 
     let ticket_low_t100 =
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-100",
         title: "Low priority T-100",
         description: "Matches ticket_id=T-100 but NOT priority=high",
         priority: "low",
       )
 
-    let test_metadata = ticket_event.create_test_metadata()
+    let test_metadata = create_test_metadata()
     let all_events = [ticket_high_t100, ticket_high_t200, ticket_low_t100]
 
     // Store events
@@ -219,7 +227,7 @@ pub fn multiple_attribute_filters_behavior_test() {
       event_log.append_events(
         db,
         all_events,
-        ticket_event.ticket_event_to_type_and_payload,
+        ticket_events.ticket_event_to_type_and_payload,
         test_metadata,
         event_filter.new(),
         0,
@@ -237,7 +245,7 @@ pub fn multiple_attribute_filters_behavior_test() {
       event_log.query_events(
         db,
         multi_attr_filter,
-        ticket_event.ticket_event_mapper,
+        ticket_events.ticket_event_mapper,
       )
 
     // Current implementation: Should return 3 events (OR behavior)
@@ -256,20 +264,20 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
 
     // Step 1: Process A reads current state
     let initial_event =
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-200",
         title: "Concurrency test ticket",
         description: "Testing optimistic locking",
         priority: "medium",
       )
 
-    let test_metadata = ticket_event.create_test_metadata()
+    let test_metadata = create_test_metadata()
 
     let assert Ok(event_log.AppendSuccess) =
       event_log.append_events(
         db,
         [initial_event],
-        ticket_event.ticket_event_to_type_and_payload,
+        ticket_events.ticket_event_to_type_and_payload,
         test_metadata,
         event_filter.new(),
         0,
@@ -286,14 +294,14 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       event_log.query_events(
         db,
         initial_filter,
-        ticket_event.ticket_event_mapper,
+        ticket_events.ticket_event_mapper,
       )
 
     let assert 1 = list.length(initial_events)
 
     // Step 2: Process B modifies the ticket (simulating concurrent access)
     let process_b_event =
-      ticket_event.TicketAssigned(
+      ticket_events.TicketAssigned(
         ticket_id: "T-200",
         assignee: "process.b@example.com",
         assigned_at: "2024-01-01T10:00:00Z",
@@ -303,7 +311,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       event_log.append_events(
         db,
         [process_b_event],
-        ticket_event.ticket_event_to_type_and_payload,
+        ticket_events.ticket_event_to_type_and_payload,
         test_metadata,
         event_filter.new(),
         0,
@@ -312,7 +320,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
 
     // Step 3: Process A tries to modify using stale sequence number
     let process_a_event =
-      ticket_event.TicketClosed(
+      ticket_events.TicketClosed(
         ticket_id: "T-200",
         resolution: "Process A resolution",
         closed_at: "2024-01-01T11:00:00Z",
@@ -329,7 +337,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       event_log.append_events(
         db,
         [process_a_event],
-        ticket_event.ticket_event_to_type_and_payload,
+        ticket_events.ticket_event_to_type_and_payload,
         test_metadata,
         conflict_filter,
         process_a_last_seen,
@@ -353,16 +361,16 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       ])
 
     let assert Ok(#(final_events, _)) =
-      event_log.query_events(db, final_filter, ticket_event.ticket_event_mapper)
+      event_log.query_events(db, final_filter, ticket_events.ticket_event_mapper)
 
     // Should have only 2 events: initial + Process B's assignment
     let assert 2 = list.length(final_events)
     let event_types =
       list.map(final_events, fn(event) {
         case event {
-          ticket_event.TicketOpened(..) -> "TicketOpened"
-          ticket_event.TicketAssigned(..) -> "TicketAssigned"
-          ticket_event.TicketClosed(..) -> "TicketClosed"
+          ticket_events.TicketOpened(..) -> "TicketOpened"
+          ticket_events.TicketAssigned(..) -> "TicketAssigned"
+          ticket_events.TicketClosed(..) -> "TicketClosed"
         }
       })
     let assert True = list.contains(event_types, "TicketOpened")

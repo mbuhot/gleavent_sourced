@@ -1,4 +1,3 @@
-import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/json
@@ -50,13 +49,6 @@ pub fn ticket_event_to_type_and_payload(
   }
 }
 
-pub fn create_test_metadata() -> dict.Dict(String, String) {
-  dict.from_list([
-    #("source", "ticket_service"),
-    #("version", "1"),
-  ])
-}
-
 pub fn ticket_event_mapper(event_type: String, payload_dynamic: Dynamic) {
   let decode_with = fn(decoder) {
     decode.run(payload_dynamic, decoder)
@@ -91,11 +83,4 @@ pub fn ticket_closed_decoder() -> decode.Decoder(TicketEvent) {
   use resolution <- decode.field("resolution", decode.string)
   use closed_at <- decode.field("closed_at", decode.string)
   decode.success(TicketClosed(ticket_id, resolution, closed_at))
-}
-
-pub fn ticket_events_decoder() -> decode.Decoder(TicketEvent) {
-  decode.one_of(ticket_opened_decoder(), or: [
-    ticket_assigned_decoder(),
-    ticket_closed_decoder(),
-  ])
 }

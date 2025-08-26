@@ -78,7 +78,7 @@ pub fn read_billing_events_for_customer(...)
 
 ## Example: Customer Support Bounded Context
 
-### Domain Events (`gleavent_sourced/customer_support/ticket_event.gleam`)
+### Domain Events (`gleavent_sourced/customer_support/ticket_events.gleam`)
 
 ```gleam
 pub type TicketEvent {
@@ -193,7 +193,7 @@ pub type GenericEvent {
 ### ❌ Cross-Context Dependencies
 ```gleam
 // Don't import domain types from other contexts
-import gleavent_sourced/customer_support/ticket_event
+import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/billing/invoice_event
 
 // In user_registration_handler.gleam - BAD!

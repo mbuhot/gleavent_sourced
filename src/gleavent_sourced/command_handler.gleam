@@ -63,7 +63,7 @@ fn append_events_with_conflict_detection(
 }
 
 // Public function to handle command with retry logic
-pub fn handle_with_retry(
+pub fn execute(
   db: pog.Connection,
   handler: CommandHandler(command, event, context, error),
   command: command,
@@ -93,7 +93,7 @@ pub fn handle_with_retry(
         event_log.AppendConflict(_count) -> {
           case retries_left {
             0 -> Error("Maximum retries exceeded due to conflicts")
-            _ -> handle_with_retry(db, handler, command, retries_left - 1)
+            _ -> execute(db, handler, command, retries_left - 1)
           }
         }
       }

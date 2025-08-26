@@ -3,12 +3,10 @@ import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 
-import gleavent_sourced/command_handler.{
-  CommandAccepted, CommandRejected,
-}
+import gleavent_sourced/command_handler.{CommandAccepted, CommandRejected}
 import gleavent_sourced/customer_support/ticket_command_router
-import gleavent_sourced/customer_support/ticket_command_types
-import gleavent_sourced/customer_support/ticket_event
+import gleavent_sourced/customer_support/ticket_commands
+import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/event_filter
 import gleavent_sourced/event_log
 import gleavent_sourced/test_runner
@@ -32,6 +30,13 @@ pub type ValidationError {
 
 pub fn main() {
   test_runner.run_eunit(["gleavent_sourced/command_handler_test"])
+}
+
+pub fn create_test_metadata() -> dict.Dict(String, String) {
+  dict.from_list([
+    #("source", "ticket_service"),
+    #("version", "1"),
+  ])
 }
 
 pub fn command_handler_type_creation_test() {
@@ -79,7 +84,7 @@ pub fn command_rejection_scenarios_test() {
   test_runner.txn(fn(db) {
     // Test command rejection with empty title
     let empty_title_command =
-      ticket_command_router.OpenTicket(ticket_command_types.OpenTicketCommand(
+      ticket_command_router.OpenTicket(ticket_commands.OpenTicketCommand(
         "T-001",
         "",
         "Description",
@@ -89,7 +94,7 @@ pub fn command_rejection_scenarios_test() {
       ticket_command_router.handle_ticket_command(empty_title_command, db)
 
     case result {
-      CommandRejected(ticket_command_types.ValidationError(message)) -> {
+      CommandRejected(ticket_commands.ValidationError(message)) -> {
         assert message == "Title cannot be empty"
       }
       _ -> panic as "Expected CommandRejected for empty title"
@@ -97,7 +102,7 @@ pub fn command_rejection_scenarios_test() {
 
     // Test command rejection with invalid priority
     let invalid_priority_command =
-      ticket_command_router.OpenTicket(ticket_command_types.OpenTicketCommand(
+      ticket_command_router.OpenTicket(ticket_commands.OpenTicketCommand(
         "T-002",
         "Valid title",
         "Description",
@@ -107,7 +112,7 @@ pub fn command_rejection_scenarios_test() {
       ticket_command_router.handle_ticket_command(invalid_priority_command, db)
 
     case result {
-      CommandRejected(ticket_command_types.ValidationError(message)) -> {
+      CommandRejected(ticket_commands.ValidationError(message)) -> {
         assert message == "Priority must be one of: low, medium, high, critical"
       }
       _ -> panic as "Expected CommandRejected for invalid priority"
@@ -119,7 +124,7 @@ pub fn context_building_with_assign_ticket_test() {
   test_runner.txn(fn(db) {
     // Create an initial ticket
     let create_command =
-      ticket_command_router.OpenTicket(ticket_command_types.OpenTicketCommand(
+      ticket_command_router.OpenTicket(ticket_commands.OpenTicketCommand(
         "T-001",
         "Initial ticket",
         "Test ticket",
@@ -131,7 +136,7 @@ pub fn context_building_with_assign_ticket_test() {
     // Test that assignment works with proper context building
     let assign_command =
       ticket_command_router.AssignTicket(
-        ticket_command_types.AssignTicketCommand(
+        ticket_commands.AssignTicketCommand(
           "T-001",
           "alice@example.com",
           "2024-01-01T10:00:00Z",
@@ -140,7 +145,7 @@ pub fn context_building_with_assign_ticket_test() {
     let assert Ok(CommandAccepted(events)) =
       ticket_command_router.handle_ticket_command(assign_command, db)
     let assert [
-      ticket_event.TicketAssigned(
+      ticket_events.TicketAssigned(
         "T-001",
         "alice@example.com",
         "2024-01-01T10:00:00Z",
@@ -150,13 +155,13 @@ pub fn context_building_with_assign_ticket_test() {
     // Test that context building prevents double assignment
     let double_assign_command =
       ticket_command_router.AssignTicket(
-        ticket_command_types.AssignTicketCommand(
+        ticket_commands.AssignTicketCommand(
           "T-001",
           "bob@example.com",
           "2024-01-01T11:00:00Z",
         ),
       )
-    let assert Ok(CommandRejected(ticket_command_types.BusinessRuleViolation(
+    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(
       message,
     ))) = ticket_command_router.handle_ticket_command(double_assign_command, db)
     assert message == "Ticket already assigned to alice@example.com"
@@ -167,7 +172,7 @@ pub fn open_ticket_command_validation_test() {
   test_runner.txn(fn(db) {
     // Test successful ticket creation
     let valid_command =
-      ticket_command_router.OpenTicket(ticket_command_types.OpenTicketCommand(
+      ticket_command_router.OpenTicket(ticket_commands.OpenTicketCommand(
         "T-500",
         "Fix login bug",
         "Users cannot login",
@@ -176,7 +181,7 @@ pub fn open_ticket_command_validation_test() {
     let assert Ok(CommandAccepted(events)) =
       ticket_command_router.handle_ticket_command(valid_command, db)
     let assert [
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         "T-500",
         "Fix login bug",
         "Users cannot login",
@@ -186,25 +191,25 @@ pub fn open_ticket_command_validation_test() {
 
     // Test validation errors
     let empty_title_command =
-      ticket_command_router.OpenTicket(ticket_command_types.OpenTicketCommand(
+      ticket_command_router.OpenTicket(ticket_commands.OpenTicketCommand(
         "T-501",
         "",
         "Description",
         "medium",
       ))
-    let assert Ok(CommandRejected(ticket_command_types.ValidationError(message))) =
+    let assert Ok(CommandRejected(ticket_commands.ValidationError(message))) =
       ticket_command_router.handle_ticket_command(empty_title_command, db)
     assert message == "Title cannot be empty"
 
     // Test invalid priority
     let invalid_priority_command =
-      ticket_command_router.OpenTicket(ticket_command_types.OpenTicketCommand(
+      ticket_command_router.OpenTicket(ticket_commands.OpenTicketCommand(
         "T-502",
         "Test ticket",
         "Description",
         "urgent",
       ))
-    let assert Ok(CommandRejected(ticket_command_types.ValidationError(message))) =
+    let assert Ok(CommandRejected(ticket_commands.ValidationError(message))) =
       ticket_command_router.handle_ticket_command(invalid_priority_command, db)
     assert message == "Priority must be one of: low, medium, high, critical"
   })
@@ -214,13 +219,13 @@ pub fn assign_ticket_handler_with_context_building_test() {
   test_runner.txn(fn(db) {
     // First, create some initial ticket events
     let initial_events = [
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-200",
         title: "Bug in payment system",
         description: "Payment processing fails",
         priority: "high",
       ),
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-201",
         title: "UI improvement request",
         description: "Make buttons prettier",
@@ -228,12 +233,12 @@ pub fn assign_ticket_handler_with_context_building_test() {
       ),
     ]
 
-    let test_metadata = ticket_event.create_test_metadata()
+    let test_metadata = create_test_metadata()
     let assert Ok(event_log.AppendSuccess) =
       event_log.append_events(
         db,
         initial_events,
-        ticket_event.ticket_event_to_type_and_payload,
+        ticket_events.ticket_event_to_type_and_payload,
         test_metadata,
         event_filter.new(),
         0,
@@ -242,7 +247,7 @@ pub fn assign_ticket_handler_with_context_building_test() {
     // Test successful assignment to unassigned ticket
     let assign_command =
       ticket_command_router.AssignTicket(
-        ticket_command_types.AssignTicketCommand(
+        ticket_commands.AssignTicketCommand(
           "T-200",
           "alice@example.com",
           "2024-01-01T10:00:00Z",
@@ -252,7 +257,7 @@ pub fn assign_ticket_handler_with_context_building_test() {
     let assert Ok(CommandAccepted(events)) =
       ticket_command_router.handle_ticket_command(assign_command, db)
     let assert [
-      ticket_event.TicketAssigned(
+      ticket_events.TicketAssigned(
         "T-200",
         "alice@example.com",
         "2024-01-01T10:00:00Z",
@@ -262,14 +267,14 @@ pub fn assign_ticket_handler_with_context_building_test() {
     // Test assignment to already assigned ticket (should fail)
     let double_assign_command =
       ticket_command_router.AssignTicket(
-        ticket_command_types.AssignTicketCommand(
+        ticket_commands.AssignTicketCommand(
           "T-200",
           "bob@example.com",
           "2024-01-01T11:00:00Z",
         ),
       )
 
-    let assert Ok(CommandRejected(ticket_command_types.BusinessRuleViolation(
+    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(
       message,
     ))) = ticket_command_router.handle_ticket_command(double_assign_command, db)
     assert message == "Ticket already assigned to alice@example.com"
@@ -277,14 +282,14 @@ pub fn assign_ticket_handler_with_context_building_test() {
     // Test assignment to non-existent ticket (should fail)
     let missing_ticket_command =
       ticket_command_router.AssignTicket(
-        ticket_command_types.AssignTicketCommand(
+        ticket_commands.AssignTicketCommand(
           "T-999",
           "charlie@example.com",
           "2024-01-01T12:00:00Z",
         ),
       )
 
-    let assert Ok(CommandRejected(ticket_command_types.BusinessRuleViolation(
+    let assert Ok(CommandRejected(ticket_commands.BusinessRuleViolation(
       message,
     ))) =
       ticket_command_router.handle_ticket_command(missing_ticket_command, db)
@@ -296,19 +301,19 @@ pub fn optimistic_concurrency_conflict_detection_test() {
   test_runner.txn(fn(db) {
     // Store initial event to establish baseline
     let initial_event =
-      ticket_event.TicketOpened(
+      ticket_events.TicketOpened(
         ticket_id: "T-100",
         title: "Initial ticket",
         description: "Test ticket for concurrency",
         priority: "medium",
       )
 
-    let test_metadata = ticket_event.create_test_metadata()
+    let test_metadata = create_test_metadata()
     let assert Ok(event_log.AppendSuccess) =
       event_log.append_events(
         db,
         [initial_event],
-        ticket_event.ticket_event_to_type_and_payload,
+        ticket_events.ticket_event_to_type_and_payload,
         test_metadata,
         event_filter.new(),
         0,
@@ -319,7 +324,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
       command_handler.CommandHandler(
         event_filter: fn(command) {
           case command {
-            ticket_command_types.AssignTicketCommand(ticket_id, _, _) -> {
+            ticket_commands.AssignTicketCommand(ticket_id, _, _) -> {
               event_filter.new()
               |> event_filter.for_type("TicketOpened", [
                 event_filter.attr_string("ticket_id", ticket_id),
@@ -333,7 +338,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
         context_reducer: fn(events, _initial) {
           list.fold(events, None, fn(current_assignee, event) {
             case event {
-              ticket_event.TicketAssigned(_, assignee, _) -> Some(assignee)
+              ticket_events.TicketAssigned(_, assignee, _) -> Some(assignee)
               _ -> current_assignee
             }
           })
@@ -341,7 +346,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
         initial_context: None,
         command_logic: fn(command, current_assignee) {
           case command {
-            ticket_command_types.AssignTicketCommand(
+            ticket_commands.AssignTicketCommand(
               ticket_id,
               assignee,
               assigned_at,
@@ -356,7 +361,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
                   // This simulates a race condition where another process inserts an event
                   // between when we loaded context and when we try to append our events
                   let conflicting_assignment =
-                    ticket_event.TicketAssigned(
+                    ticket_events.TicketAssigned(
                       ticket_id,
                       "concurrent_user@example.com",
                       "2024-01-01T09:59:00Z",
@@ -366,7 +371,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
                     event_log.append_events(
                       db,
                       [conflicting_assignment],
-                      ticket_event.ticket_event_to_type_and_payload,
+                      ticket_events.ticket_event_to_type_and_payload,
                       test_metadata,
                       event_filter.new(),
                       // No conflict check
@@ -375,7 +380,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
 
                   // Return our events - this should cause conflict detection!
                   Ok([
-                    ticket_event.TicketAssigned(
+                    ticket_events.TicketAssigned(
                       ticket_id,
                       assignee,
                       assigned_at,
@@ -386,10 +391,10 @@ pub fn optimistic_concurrency_conflict_detection_test() {
             }
           }
         },
-        event_mapper: ticket_event.ticket_event_mapper,
-        event_converter: ticket_event.ticket_event_to_type_and_payload,
+        event_mapper: ticket_events.ticket_event_mapper,
+        event_converter: ticket_events.ticket_event_to_type_and_payload,
         metadata_generator: fn(_command, _context) {
-          ticket_event.create_test_metadata()
+          create_test_metadata()
         },
       )
 
@@ -400,14 +405,14 @@ pub fn optimistic_concurrency_conflict_detection_test() {
     // 4. Retry with fresh context
     // 5. See the conflicting assignment and reject the command
     let test_command =
-      ticket_command_types.AssignTicketCommand(
+      ticket_commands.AssignTicketCommand(
         "T-100",
         "test_user@example.com",
         "2024-01-01T10:00:00Z",
       )
 
     let assert Ok(CommandRejected(ValidationError(message))) =
-      command_handler.handle_with_retry(
+      command_handler.execute(
         db,
         conflicting_handler,
         test_command,

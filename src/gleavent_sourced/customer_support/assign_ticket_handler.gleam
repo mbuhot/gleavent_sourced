@@ -3,11 +3,11 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleavent_sourced/command_handler.{type CommandHandler}
-import gleavent_sourced/customer_support/ticket_command_types.{
+import gleavent_sourced/customer_support/ticket_commands.{
   type AssignTicketCommand, type TicketError, AssignTicketCommand,
   BusinessRuleViolation,
 }
-import gleavent_sourced/customer_support/ticket_event
+import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/event_filter
 
 // Context for tracking ticket assignment state
@@ -22,7 +22,7 @@ pub type TicketAssignmentContext {
 // Create the CommandHandler for AssignTicket
 pub fn create_assign_ticket_handler() -> CommandHandler(
   AssignTicketCommand,
-  ticket_event.TicketEvent,
+  ticket_events.TicketEvent,
   TicketAssignmentContext,
   TicketError,
 ) {
@@ -48,11 +48,11 @@ pub fn create_assign_ticket_handler() -> CommandHandler(
       // Fold events to build current ticket state
       list.fold(events, initial_context(), fn(context, event) {
         case event {
-          ticket_event.TicketOpened(..) ->
+          ticket_events.TicketOpened(..) ->
             TicketAssignmentContext(..context, exists: True)
-          ticket_event.TicketAssigned(_, assignee, _) ->
+          ticket_events.TicketAssigned(_, assignee, _) ->
             TicketAssignmentContext(..context, current_assignee: Some(assignee))
-          ticket_event.TicketClosed(..) ->
+          ticket_events.TicketClosed(..) ->
             TicketAssignmentContext(..context, is_closed: True)
         }
       })
@@ -66,9 +66,9 @@ pub fn create_assign_ticket_handler() -> CommandHandler(
         context,
       )
     },
-    event_mapper: ticket_event.ticket_event_mapper,
-    event_converter: ticket_event.ticket_event_to_type_and_payload,
-    metadata_generator: fn(command, _context) {
+    event_mapper: ticket_events.ticket_event_mapper,
+    event_converter: ticket_events.ticket_event_to_type_and_payload,
+    metadata_generator: fn(_command, _context) {
       dict.from_list([
         #("source", "ticket_service"),
         #("version", "1"),
@@ -91,13 +91,13 @@ fn validate_assignment(
   assignee: String,
   assigned_at: String,
   context: TicketAssignmentContext,
-) -> Result(List(ticket_event.TicketEvent), TicketError) {
+) -> Result(List(ticket_events.TicketEvent), TicketError) {
   use _ <- result.try(validate_ticket_exists(context))
   use _ <- result.try(validate_ticket_not_closed(context))
   use _ <- result.try(validate_not_already_assigned(context, assignee))
   use _ <- result.try(validate_assignee(assignee))
   use _ <- result.try(validate_assigned_at(assigned_at))
-  Ok([ticket_event.TicketAssigned(ticket_id, assignee, assigned_at)])
+  Ok([ticket_events.TicketAssigned(ticket_id, assignee, assigned_at)])
 }
 
 fn validate_ticket_exists(
