@@ -19,15 +19,9 @@ pub fn create_close_ticket_handler(
 ) {
   let facts = facts(command)
 
-  let initial_context = Ctx(
-    exists: False,
-    is_closed: False,
-    current_assignee: None,
-    priority: None,
-  )
-  ticket_commands.make_handler(
-    facts, initial_context, execute
-  )
+  let initial_context =
+    Ctx(exists: False, is_closed: False, current_assignee: None, priority: None)
+  ticket_commands.make_handler(facts, initial_context, execute)
 }
 
 // Context for tracking ticket state for closing
@@ -72,8 +66,6 @@ fn execute(
     ),
   ])
 }
-
-
 
 fn validate_ticket_exists(
   context: TicketCloseContext,

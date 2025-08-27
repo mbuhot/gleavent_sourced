@@ -30,8 +30,8 @@ pub fn create_open_ticket_handler() -> CommandHandler(
         command.priority,
       )
     },
-    event_mapper: ticket_events.ticket_event_mapper,
-    event_converter: ticket_events.ticket_event_to_type_and_payload,
+    event_mapper: ticket_events.decode,
+    event_converter: ticket_events.encode,
     metadata_generator: fn(command: OpenTicketCommand, _context) {
       dict.from_list([
         #("command_type", "OpenTicket"),

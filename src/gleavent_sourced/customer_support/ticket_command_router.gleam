@@ -27,7 +27,8 @@ pub fn handle_ticket_command(
       command_handler.execute(db, handler, open_cmd, 3)
     }
     AssignTicket(assign_cmd) -> {
-      let handler = assign_ticket_handler.create_assign_ticket_handler(assign_cmd)
+      let handler =
+        assign_ticket_handler.create_assign_ticket_handler(assign_cmd)
       command_handler.execute(db, handler, assign_cmd, 3)
     }
     CloseTicket(close_cmd) -> {

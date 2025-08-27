@@ -233,7 +233,7 @@ pub fn assign_ticket_handler_with_context_building_test() {
       event_log.append_events(
         db,
         initial_events,
-        ticket_events.ticket_event_to_type_and_payload,
+        ticket_events.encode,
         test_metadata,
         event_filter.new(),
         0,
@@ -399,7 +399,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
       event_log.append_events(
         db,
         [initial_event],
-        ticket_events.ticket_event_to_type_and_payload,
+        ticket_events.encode,
         test_metadata,
         event_filter.new(),
         0,
@@ -451,7 +451,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
                     event_log.append_events(
                       db,
                       [conflicting_assignment],
-                      ticket_events.ticket_event_to_type_and_payload,
+                      ticket_events.encode,
                       test_metadata,
                       event_filter.new(),
                       // No conflict check
@@ -471,8 +471,8 @@ pub fn optimistic_concurrency_conflict_detection_test() {
             }
           }
         },
-        event_mapper: ticket_events.ticket_event_mapper,
-        event_converter: ticket_events.ticket_event_to_type_and_payload,
+        event_mapper: ticket_events.decode,
+        event_converter: ticket_events.encode,
         metadata_generator: fn(_command, _context) { create_test_metadata() },
       )
 

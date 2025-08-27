@@ -14,9 +14,7 @@ pub type TicketEvent {
   TicketClosed(ticket_id: String, resolution: String, closed_at: String)
 }
 
-pub fn ticket_event_to_type_and_payload(
-  event: TicketEvent,
-) -> #(String, json.Json) {
+pub fn encode(event: TicketEvent) -> #(String, json.Json) {
   case event {
     TicketOpened(ticket_id, title, description, priority) -> {
       let payload =
@@ -49,7 +47,7 @@ pub fn ticket_event_to_type_and_payload(
   }
 }
 
-pub fn ticket_event_mapper(event_type: String, payload_dynamic: Dynamic) {
+pub fn decode(event_type: String, payload_dynamic: Dynamic) {
   let decode_with = fn(decoder) {
     decode.run(payload_dynamic, decoder)
     |> result.map_error(fn(_) { "Failed to decode " <> event_type })

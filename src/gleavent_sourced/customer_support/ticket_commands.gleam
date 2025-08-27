@@ -1,7 +1,8 @@
 import gleam/dict
-import gleavent_sourced/customer_support/ticket_events
-import gleavent_sourced/customer_support/ticket_facts
 import gleavent_sourced/command_handler
+import gleavent_sourced/customer_support/ticket_events
+
+import gleavent_sourced/facts
 
 // Command types for ticket operations
 
@@ -35,13 +36,14 @@ pub type TicketError {
 
 pub fn make_handler(facts, initial_context, execute) {
   command_handler.CommandHandler(
-    event_filter: ticket_facts.event_filter(facts),
+    event_filter: facts.event_filter(facts),
     initial_context: initial_context,
-    context_reducer: ticket_facts.build_context(facts),
+    context_reducer: facts.build_context(facts),
     command_logic: execute,
-    event_mapper: ticket_events.ticket_event_mapper,
-    event_converter: ticket_events.ticket_event_to_type_and_payload,
-    metadata_generator: metadata)
+    event_mapper: ticket_events.decode,
+    event_converter: ticket_events.encode,
+    metadata_generator: metadata,
+  )
 }
 
 fn metadata(_command, _context) {

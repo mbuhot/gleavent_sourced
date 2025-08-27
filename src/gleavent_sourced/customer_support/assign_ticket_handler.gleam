@@ -8,7 +8,6 @@ import gleavent_sourced/customer_support/ticket_commands.{
 import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/customer_support/ticket_facts
 
-
 // Create the CommandHandler for AssignTicket
 pub fn create_assign_ticket_handler(
   command: AssignTicketCommand,
@@ -20,14 +19,9 @@ pub fn create_assign_ticket_handler(
 ) {
   let facts = facts(command)
 
-  let initial_context = Ctx(
-    exists: False,
-    current_assignee: None,
-    is_closed: False,
-  )
-  ticket_commands.make_handler(
-    facts, initial_context, execute
-  )
+  let initial_context =
+    Ctx(exists: False, current_assignee: None, is_closed: False)
+  ticket_commands.make_handler(facts, initial_context, execute)
 }
 
 // Context for tracking ticket assignment state

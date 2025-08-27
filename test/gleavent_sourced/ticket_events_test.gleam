@@ -45,7 +45,7 @@ pub fn complete_ticket_lifecycle_test() {
       event_log.append_events(
         db,
         ticket_events,
-        ticket_events.ticket_event_to_type_and_payload,
+        ticket_events.encode,
         test_metadata,
         event_filter.new(),
         0,
@@ -65,11 +65,7 @@ pub fn complete_ticket_lifecycle_test() {
       ])
 
     let assert Ok(#(events, _max_seq)) =
-      event_log.query_events(
-        db,
-        ticket_filter,
-        ticket_events.ticket_event_mapper,
-      )
+      event_log.query_events(db, ticket_filter, ticket_events.decode)
 
     // Verify complete lifecycle: all 3 events stored and retrieved correctly
     let assert 3 = list.length(events)
@@ -123,7 +119,7 @@ pub fn event_filtering_by_attributes_test() {
       event_log.append_events(
         db,
         all_events,
-        ticket_events.ticket_event_to_type_and_payload,
+        ticket_events.encode,
         test_metadata,
         event_filter.new(),
         0,
@@ -137,11 +133,7 @@ pub fn event_filtering_by_attributes_test() {
       ])
 
     let assert Ok(#(events, _max_seq)) =
-      event_log.query_events(
-        db,
-        high_priority_filter,
-        ticket_events.ticket_event_mapper,
-      )
+      event_log.query_events(db, high_priority_filter, ticket_events.decode)
 
     // Should find only the high priority ticket
     let assert 1 = list.length(events)
@@ -160,11 +152,7 @@ pub fn event_filtering_by_attributes_test() {
       ])
 
     let assert Ok(#(complex_events, _)) =
-      event_log.query_events(
-        db,
-        complex_filter,
-        ticket_events.ticket_event_mapper,
-      )
+      event_log.query_events(db, complex_filter, ticket_events.decode)
 
     // Should find both the high priority ticket and the assignment
     let assert 2 = list.length(complex_events)
@@ -178,11 +166,7 @@ pub fn event_filtering_by_attributes_test() {
       ])
 
     let assert Ok(#(multi_attr_events, _)) =
-      event_log.query_events(
-        db,
-        multi_attr_filter,
-        ticket_events.ticket_event_mapper,
-      )
+      event_log.query_events(db, multi_attr_filter, ticket_events.decode)
 
     // Should find only the T-100 high priority ticket (both conditions must match)
     let assert 1 = list.length(multi_attr_events)
@@ -227,7 +211,7 @@ pub fn multiple_attribute_filters_behavior_test() {
       event_log.append_events(
         db,
         all_events,
-        ticket_events.ticket_event_to_type_and_payload,
+        ticket_events.encode,
         test_metadata,
         event_filter.new(),
         0,
@@ -242,11 +226,7 @@ pub fn multiple_attribute_filters_behavior_test() {
       ])
 
     let assert Ok(#(filtered_events, _)) =
-      event_log.query_events(
-        db,
-        multi_attr_filter,
-        ticket_events.ticket_event_mapper,
-      )
+      event_log.query_events(db, multi_attr_filter, ticket_events.decode)
 
     // Current implementation: Should return 3 events (OR behavior)
     // Expected for AND: Should return 1 event (only ticket_high_t100)
@@ -277,7 +257,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       event_log.append_events(
         db,
         [initial_event],
-        ticket_events.ticket_event_to_type_and_payload,
+        ticket_events.encode,
         test_metadata,
         event_filter.new(),
         0,
@@ -291,11 +271,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       ])
 
     let assert Ok(#(initial_events, process_a_last_seen)) =
-      event_log.query_events(
-        db,
-        initial_filter,
-        ticket_events.ticket_event_mapper,
-      )
+      event_log.query_events(db, initial_filter, ticket_events.decode)
 
     let assert 1 = list.length(initial_events)
 
@@ -311,7 +287,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       event_log.append_events(
         db,
         [process_b_event],
-        ticket_events.ticket_event_to_type_and_payload,
+        ticket_events.encode,
         test_metadata,
         event_filter.new(),
         0,
@@ -337,7 +313,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       event_log.append_events(
         db,
         [process_a_event],
-        ticket_events.ticket_event_to_type_and_payload,
+        ticket_events.encode,
         test_metadata,
         conflict_filter,
         process_a_last_seen,
@@ -361,11 +337,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       ])
 
     let assert Ok(#(final_events, _)) =
-      event_log.query_events(
-        db,
-        final_filter,
-        ticket_events.ticket_event_mapper,
-      )
+      event_log.query_events(db, final_filter, ticket_events.decode)
 
     // Should have only 2 events: initial + Process B's assignment
     let assert 2 = list.length(final_events)
