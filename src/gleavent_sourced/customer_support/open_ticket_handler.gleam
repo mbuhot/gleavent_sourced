@@ -5,8 +5,9 @@ import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type OpenTicketCommand, type TicketError, ValidationError,
 }
-import gleavent_sourced/customer_support/ticket_events
+import gleavent_sourced/customer_support/ticket_events.{TicketOpened}
 import gleavent_sourced/event_filter
+import gleavent_sourced/validation.{require, validate}
 
 // Create the CommandHandler for OpenTicket
 pub fn create_open_ticket_handler() -> CommandHandler(
@@ -22,14 +23,7 @@ pub fn create_open_ticket_handler() -> CommandHandler(
       Nil
     },
     initial_context: Nil,
-    command_logic: fn(command: OpenTicketCommand, _context) {
-      validate_open_ticket_command(
-        command.ticket_id,
-        command.title,
-        command.description,
-        command.priority,
-      )
-    },
+    command_logic: execute,
     event_mapper: ticket_events.decode,
     event_converter: ticket_events.encode,
     metadata_generator: fn(command: OpenTicketCommand, _context) {
@@ -43,38 +37,39 @@ pub fn create_open_ticket_handler() -> CommandHandler(
   )
 }
 
-// Validation logic for OpenTicket command
-fn validate_open_ticket_command(
-  ticket_id: String,
-  title: String,
-  description: String,
-  priority: String,
+fn execute(
+  command: OpenTicketCommand,
+  _ctx: Nil,
 ) -> Result(List(ticket_events.TicketEvent), TicketError) {
-  use _ <- result.try(validate_ticket_id(ticket_id))
-  use _ <- result.try(validate_title(title))
-  use _ <- result.try(validate_priority(priority))
-  Ok([ticket_events.TicketOpened(ticket_id, title, description, priority)])
+  use _ <- validate(ticket_id_valid, command.ticket_id)
+  use _ <- validate(title_valid, command.title)
+  use _ <- validate(priority_valid, command.priority)
+  Ok([
+    TicketOpened(
+      command.ticket_id,
+      command.title,
+      command.description,
+      command.priority,
+    ),
+  ])
 }
 
-fn validate_ticket_id(ticket_id: String) -> Result(Nil, TicketError) {
-  case ticket_id {
-    "" -> Error(ValidationError("Ticket ID cannot be empty"))
-    _ -> Ok(Nil)
-  }
+fn ticket_id_valid(ticket_id: String) -> Result(Nil, TicketError) {
+  require(ticket_id != "", ValidationError("Ticket ID cannot be empty"))
 }
 
-fn validate_title(title: String) -> Result(Nil, TicketError) {
-  case title {
-    "" -> Error(ValidationError("Title cannot be empty"))
-    _ ->
-      case string.length(title) > 100 {
-        True -> Error(ValidationError("Title cannot exceed 100 characters"))
-        False -> Ok(Nil)
-      }
-  }
+fn title_valid(title: String) -> Result(Nil, TicketError) {
+  use _ <- result.try(require(
+    title != "",
+    ValidationError("Title cannot be empty"),
+  ))
+  require(
+    string.length(title) <= 100,
+    ValidationError("Title cannot exceed 100 characters"),
+  )
 }
 
-fn validate_priority(priority: String) -> Result(Nil, TicketError) {
+fn priority_valid(priority: String) -> Result(Nil, TicketError) {
   case priority {
     "low" | "medium" | "high" | "critical" -> Ok(Nil)
     _ ->

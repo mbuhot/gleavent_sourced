@@ -1,5 +1,8 @@
 import gleam/option.{type Option, None, Some}
-import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
+import gleavent_sourced/customer_support/ticket_events.{
+  type TicketEvent, TicketAssigned, TicketClosed, TicketMarkedDuplicate,
+  TicketOpened,
+}
 import gleavent_sourced/event_filter
 import gleavent_sourced/facts
 
@@ -16,17 +19,6 @@ fn for_type_with_id(event_type, ticket_id) {
   ])
 }
 
-fn for_duplicate_relationships(ticket_id) {
-  // Find TicketMarkedDuplicate events where this ticket is either the original or the duplicate
-  event_filter.new()
-  |> event_filter.for_type("TicketMarkedDuplicate", [
-    event_filter.attr_string("duplicate_ticket_id", ticket_id),
-  ])
-  |> event_filter.for_type("TicketMarkedDuplicate", [
-    event_filter.attr_string("original_ticket_id", ticket_id),
-  ])
-}
-
 // Fact: Whether a ticket exists (derived from TicketOpened)
 pub fn exists(
   ticket_id: String,
@@ -34,11 +26,9 @@ pub fn exists(
 ) -> facts.Fact(TicketEvent, context) {
   facts.new_fact(
     event_filter: for_type_with_id("TicketOpened", ticket_id),
-    apply_events: facts.fold_into(update_context, False, fn(acc, event) {
-      case event {
-        ticket_events.TicketOpened(..) -> True
-        _ -> acc
-      }
+    apply_events: facts.fold_into(update_context, False, fn(_acc, event) {
+      let assert TicketOpened(..) = event
+      True
     }),
   )
 }
@@ -50,11 +40,9 @@ pub fn is_closed(
 ) -> facts.Fact(TicketEvent, context) {
   facts.new_fact(
     event_filter: for_type_with_id("TicketClosed", ticket_id),
-    apply_events: facts.fold_into(update_context, False, fn(acc, event) {
-      case event {
-        ticket_events.TicketClosed(..) -> True
-        _ -> acc
-      }
+    apply_events: facts.fold_into(update_context, False, fn(_acc, event) {
+      let assert TicketClosed(..) = event
+      True
     }),
   )
 }
@@ -66,11 +54,9 @@ pub fn current_assignee(
 ) -> facts.Fact(TicketEvent, context) {
   facts.new_fact(
     event_filter: for_type_with_id("TicketAssigned", ticket_id),
-    apply_events: facts.fold_into(update_context, None, fn(acc, event) {
-      case event {
-        ticket_events.TicketAssigned(_, assignee, _) -> Some(assignee)
-        _ -> acc
-      }
+    apply_events: facts.fold_into(update_context, None, fn(_acc, event) {
+      let assert TicketAssigned(_, assignee, _) = event
+      Some(assignee)
     }),
   )
 }
@@ -82,11 +68,9 @@ pub fn priority(
 ) -> facts.Fact(TicketEvent, context) {
   facts.new_fact(
     event_filter: for_type_with_id("TicketOpened", ticket_id),
-    apply_events: facts.fold_into(update_context, None, fn(acc, event) {
-      case event {
-        ticket_events.TicketOpened(_, _, _, priority) -> Some(priority)
-        _ -> acc
-      }
+    apply_events: facts.fold_into(update_context, None, fn(_acc, event) {
+      let assert TicketOpened(_, _, _, priority) = event
+      Some(priority)
     }),
   )
 }
@@ -97,21 +81,23 @@ pub fn duplicate_status(
   ticket_id: String,
   update_context: fn(context, DuplicateStatus) -> context,
 ) -> facts.Fact(TicketEvent, context) {
+  let event_filter =
+    event_filter.new()
+    |> event_filter.for_type("TicketMarkedDuplicate", [
+      event_filter.attr_string("duplicate_ticket_id", ticket_id),
+    ])
+    |> event_filter.for_type("TicketMarkedDuplicate", [
+      event_filter.attr_string("original_ticket_id", ticket_id),
+    ])
+
   facts.new_fact(
-    event_filter: for_duplicate_relationships(ticket_id),
-    apply_events: facts.fold_into(update_context, Unique, fn(acc, event) {
-      case event {
-        ticket_events.TicketMarkedDuplicate(duplicate_id, original_id, _) -> {
-          case duplicate_id == ticket_id, original_id == ticket_id {
-            True, False -> DuplicateOf(original_id)
-            // This ticket is marked as duplicate
-            False, True -> DuplicatedBy(duplicate_id)
-            // This ticket has a duplicate
-            _, _ -> acc
-            // Shouldn't happen with proper filter, but keep existing status
-          }
-        }
-        _ -> acc
+    event_filter: event_filter,
+    apply_events: facts.fold_into(update_context, Unique, fn(_acc, event) {
+      let assert TicketMarkedDuplicate(duplicate_id, original_id, _) = event
+      case duplicate_id == ticket_id, original_id == ticket_id {
+        True, False -> DuplicateOf(original_id)
+        False, True -> DuplicatedBy(duplicate_id)
+        _, _ -> panic as "impossible"
       }
     }),
   )

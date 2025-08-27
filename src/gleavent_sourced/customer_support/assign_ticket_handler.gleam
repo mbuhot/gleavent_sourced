@@ -1,14 +1,49 @@
-import gleam/result
-
 import gleam/option.{type Option, None, Some}
+
 import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type AssignTicketCommand, type TicketError, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/customer_support/ticket_facts
+import gleavent_sourced/validation.{require, validate}
 
-// Create the CommandHandler for AssignTicket
+// Context built from facts to validate ticket assignment business rules
+// Contains validation state for the ticket being assigned
+pub type TicketAssignmentContext {
+  TicketAssignmentContext(
+    exists: Bool,
+    current_assignee: Option(String),
+    is_closed: Bool,
+  )
+}
+
+// Default context state before loading events - assumes ticket doesn't exist
+fn initial_context() {
+  TicketAssignmentContext(
+    exists: False,
+    current_assignee: None,
+    is_closed: False,
+  )
+}
+
+// Define facts needed to validate ticket assignment
+fn facts(ticket_id: String) {
+  [
+    ticket_facts.exists(ticket_id, fn(ctx, exists) {
+      TicketAssignmentContext(..ctx, exists:)
+    }),
+    ticket_facts.current_assignee(ticket_id, fn(ctx, current_assignee) {
+      TicketAssignmentContext(..ctx, current_assignee:)
+    }),
+    ticket_facts.is_closed(ticket_id, fn(ctx, is_closed) {
+      TicketAssignmentContext(..ctx, is_closed:)
+    }),
+  ]
+}
+
+// Creates command handler with facts to validate ticket before assignment
+// Uses tagged event isolation to efficiently load ticket state
 pub fn create_assign_ticket_handler(
   command: AssignTicketCommand,
 ) -> CommandHandler(
@@ -17,36 +52,23 @@ pub fn create_assign_ticket_handler(
   TicketAssignmentContext,
   TicketError,
 ) {
-  let facts = facts(command)
-
-  let initial_context =
-    Ctx(exists: False, current_assignee: None, is_closed: False)
-  ticket_commands.make_handler(facts, initial_context, execute)
+  ticket_commands.make_handler(
+    facts(command.ticket_id),
+    initial_context(),
+    execute,
+  )
 }
 
-// Context for tracking ticket assignment state
-pub type TicketAssignmentContext {
-  Ctx(exists: Bool, current_assignee: Option(String), is_closed: Bool)
-}
-
-fn facts(command: AssignTicketCommand) {
-  [
-    ticket_facts.exists(command.ticket_id, fn(c, exists) { Ctx(..c, exists:) }),
-    ticket_facts.current_assignee(command.ticket_id, fn(c, current_assignee) {
-      Ctx(..c, current_assignee:)
-    }),
-    ticket_facts.is_closed(command.ticket_id, fn(c, is_closed) {
-      Ctx(..c, is_closed:)
-    }),
-  ]
-}
-
-fn execute(command: AssignTicketCommand, context) {
-  use _ <- result.try(validate_ticket_exists(context))
-  use _ <- result.try(validate_ticket_not_closed(context))
-  use _ <- result.try(validate_not_already_assigned(context, command.assignee))
-  use _ <- result.try(validate_assignee(command.assignee))
-  use _ <- result.try(validate_assigned_at(command.assigned_at))
+// Core business logic - validates rules then creates TicketAssigned event
+fn execute(
+  command: AssignTicketCommand,
+  context: TicketAssignmentContext,
+) -> Result(List(ticket_events.TicketEvent), TicketError) {
+  use _ <- validate(ticket_exists, context)
+  use _ <- validate(ticket_not_closed, context)
+  use _ <- validate(not_already_assigned, context)
+  use _ <- validate(assignee, command.assignee)
+  use _ <- validate(assigned_at, command.assigned_at)
   Ok([
     ticket_events.TicketAssigned(
       command.ticket_id,
@@ -56,54 +78,43 @@ fn execute(command: AssignTicketCommand, context) {
   ])
 }
 
-fn validate_ticket_exists(
-  context: TicketAssignmentContext,
-) -> Result(Nil, TicketError) {
-  case context.exists {
-    True -> Ok(Nil)
-    False -> Error(BusinessRuleViolation("Ticket does not exist"))
-  }
+// Validates the ticket exists before allowing assignment
+fn ticket_exists(context: TicketAssignmentContext) -> Result(Nil, TicketError) {
+  require(context.exists, BusinessRuleViolation("Ticket does not exist"))
 }
 
-fn validate_ticket_not_closed(
+// Validates the ticket is not closed before allowing assignment
+fn ticket_not_closed(
   context: TicketAssignmentContext,
 ) -> Result(Nil, TicketError) {
-  case context.is_closed {
-    False -> Ok(Nil)
-    True -> Error(BusinessRuleViolation("Cannot assign closed ticket"))
-  }
+  require(
+    !context.is_closed,
+    BusinessRuleViolation("Cannot assign closed ticket"),
+  )
 }
 
-fn validate_not_already_assigned(
+// Prevents assigning a ticket that already has an assignee
+fn not_already_assigned(
   context: TicketAssignmentContext,
-  new_assignee: String,
 ) -> Result(Nil, TicketError) {
   case context.current_assignee {
     None -> Ok(Nil)
     Some(existing_assignee) ->
-      case existing_assignee == new_assignee {
-        True ->
-          Error(BusinessRuleViolation(
-            "Ticket already assigned to " <> existing_assignee,
-          ))
-        False ->
-          Error(BusinessRuleViolation(
-            "Ticket already assigned to " <> existing_assignee,
-          ))
-      }
+      Error(BusinessRuleViolation(
+        "Ticket already assigned to " <> existing_assignee,
+      ))
   }
 }
 
-fn validate_assignee(assignee: String) -> Result(Nil, TicketError) {
-  case assignee {
-    "" -> Error(BusinessRuleViolation("Assignee cannot be empty"))
-    _ -> Ok(Nil)
-  }
+// Validates the assignee field is not empty
+fn assignee(assignee: String) -> Result(Nil, TicketError) {
+  require(assignee != "", BusinessRuleViolation("Assignee cannot be empty"))
 }
 
-fn validate_assigned_at(assigned_at: String) -> Result(Nil, TicketError) {
-  case assigned_at {
-    "" -> Error(BusinessRuleViolation("Assigned at cannot be empty"))
-    _ -> Ok(Nil)
-  }
+// Validates the assigned_at timestamp is not empty
+fn assigned_at(assigned_at: String) -> Result(Nil, TicketError) {
+  require(
+    assigned_at != "",
+    BusinessRuleViolation("Assigned at cannot be empty"),
+  )
 }

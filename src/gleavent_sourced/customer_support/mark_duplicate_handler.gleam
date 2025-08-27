@@ -1,11 +1,13 @@
-import gleam/result
 import gleavent_sourced/command_handler
 import gleavent_sourced/customer_support/ticket_commands.{
-  type MarkDuplicateCommand, type TicketError,
+  type MarkDuplicateCommand, type TicketError, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/customer_support/ticket_facts.{type DuplicateStatus}
+import gleavent_sourced/validation.{require, validate}
 
+// Context built from facts to validate duplicate marking business rules
+// Contains validation state for both tickets involved in the duplicate relationship
 pub type MarkDuplicateContext {
   MarkDuplicateContext(
     original_ticket_exists: Bool,
@@ -15,6 +17,39 @@ pub type MarkDuplicateContext {
   )
 }
 
+// Default context state before loading events - assumes tickets don't exist
+fn initial_context() {
+  MarkDuplicateContext(
+    original_ticket_exists: False,
+    original_ticket_closed: False,
+    duplicate_ticket_exists: False,
+    duplicate_ticket_status: ticket_facts.Unique,
+  )
+}
+
+// Define facts needed to validate both tickets in the duplicate relationship
+fn facts(original_ticket_id, duplicate_ticket_id) {
+  [
+    ticket_facts.exists(original_ticket_id, fn(ctx, original_ticket_exists) {
+      MarkDuplicateContext(..ctx, original_ticket_exists:)
+    }),
+    ticket_facts.is_closed(original_ticket_id, fn(ctx, original_ticket_closed) {
+      MarkDuplicateContext(..ctx, original_ticket_closed:)
+    }),
+    ticket_facts.exists(duplicate_ticket_id, fn(ctx, duplicate_ticket_exists) {
+      MarkDuplicateContext(..ctx, duplicate_ticket_exists:)
+    }),
+    ticket_facts.duplicate_status(
+      duplicate_ticket_id,
+      fn(ctx, duplicate_ticket_status) {
+        MarkDuplicateContext(..ctx, duplicate_ticket_status:)
+      },
+    ),
+  ]
+}
+
+// Creates command handler with facts to validate both tickets before marking duplicate
+// Uses tagged event isolation to efficiently load facts from multiple tickets
 pub fn create_mark_duplicate_handler(
   command: MarkDuplicateCommand,
 ) -> command_handler.CommandHandler(
@@ -23,95 +58,61 @@ pub fn create_mark_duplicate_handler(
   MarkDuplicateContext,
   TicketError,
 ) {
-  let handler_facts = [
-    ticket_facts.exists(
-      command.original_ticket_id,
-      fn(ctx, original_ticket_exists) {
-        MarkDuplicateContext(..ctx, original_ticket_exists:)
-      },
-    ),
-    ticket_facts.is_closed(
-      command.original_ticket_id,
-      fn(ctx, original_ticket_closed) {
-        MarkDuplicateContext(..ctx, original_ticket_closed:)
-      },
-    ),
-    ticket_facts.exists(
-      command.duplicate_ticket_id,
-      fn(ctx, duplicate_ticket_exists) {
-        MarkDuplicateContext(..ctx, duplicate_ticket_exists:)
-      },
-    ),
-    ticket_facts.duplicate_status(
-      command.duplicate_ticket_id,
-      fn(ctx, duplicate_ticket_status) {
-        MarkDuplicateContext(..ctx, duplicate_ticket_status:)
-      },
-    ),
-  ]
-
   ticket_commands.make_handler(
-    handler_facts,
-    MarkDuplicateContext(
-      original_ticket_exists: False,
-      original_ticket_closed: False,
-      duplicate_ticket_exists: False,
-      duplicate_ticket_status: ticket_facts.Unique,
-    ),
-    mark_duplicate_logic,
+    facts(command.original_ticket_id, command.duplicate_ticket_id),
+    initial_context(),
+    execute,
   )
 }
 
-fn mark_duplicate_logic(
+// Core business logic - validates rules then creates TicketMarkedDuplicate event
+fn execute(
   command: MarkDuplicateCommand,
   context: MarkDuplicateContext,
 ) -> Result(List(TicketEvent), TicketError) {
-  use _ <- result.try(validate_original_ticket_exists(context))
-  use _ <- result.try(validate_duplicate_ticket_exists(context))
-  use _ <- result.try(validate_not_already_duplicate(context))
+  use _ <- validate(original_ticket_exists, context)
+  use _ <- validate(duplicate_ticket_exists, context)
+  use _ <- validate(not_already_duplicate, context)
 
   // All validations pass - create the event
-  let event =
+  let events = [
     ticket_events.TicketMarkedDuplicate(
       duplicate_ticket_id: command.duplicate_ticket_id,
       original_ticket_id: command.original_ticket_id,
       marked_at: command.marked_at,
-    )
-  Ok([event])
+    ),
+  ]
+
+  Ok(events)
 }
 
-fn validate_original_ticket_exists(
+// Validates the original ticket exists before allowing duplicate marking
+fn original_ticket_exists(
   context: MarkDuplicateContext,
 ) -> Result(Nil, TicketError) {
-  case context.original_ticket_exists {
-    False ->
-      Error(ticket_commands.BusinessRuleViolation(
-        "Original ticket does not exist",
-      ))
-    True -> Ok(Nil)
-  }
+  require(
+    context.original_ticket_exists,
+    BusinessRuleViolation("Original ticket does not exist"),
+  )
 }
 
-fn validate_duplicate_ticket_exists(
+// Validates the duplicate ticket exists before marking it as duplicate
+fn duplicate_ticket_exists(
   context: MarkDuplicateContext,
 ) -> Result(Nil, TicketError) {
-  case context.duplicate_ticket_exists {
-    False ->
-      Error(ticket_commands.BusinessRuleViolation(
-        "Duplicate ticket does not exist",
-      ))
-    True -> Ok(Nil)
-  }
+  require(
+    context.duplicate_ticket_exists,
+    BusinessRuleViolation("Duplicate ticket does not exist"),
+  )
 }
 
-fn validate_not_already_duplicate(
+// Prevents marking a ticket as duplicate if it's already marked as one
+fn not_already_duplicate(
   context: MarkDuplicateContext,
 ) -> Result(Nil, TicketError) {
   case context.duplicate_ticket_status {
     ticket_facts.DuplicateOf(_) ->
-      Error(ticket_commands.BusinessRuleViolation(
-        "Ticket is already marked as duplicate",
-      ))
+      Error(BusinessRuleViolation("Ticket is already marked as duplicate"))
     _ -> Ok(Nil)
   }
 }
