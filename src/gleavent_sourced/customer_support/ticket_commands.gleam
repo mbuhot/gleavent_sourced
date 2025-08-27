@@ -28,6 +28,14 @@ pub type CloseTicketCommand {
   )
 }
 
+pub type MarkDuplicateCommand {
+  MarkDuplicateCommand(
+    duplicate_ticket_id: String,
+    original_ticket_id: String,
+    marked_at: String,
+  )
+}
+
 // Error types for ticket operations
 pub type TicketError {
   ValidationError(message: String)

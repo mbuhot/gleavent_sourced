@@ -1,10 +1,11 @@
 import gleam/dict
-
+import gleam/dynamic.{type Dynamic}
 import gleam/int
 import gleam/list
 import gleam/result
-
 import gleavent_sourced/event_filter
+import gleavent_sourced/event_log
+import pog
 
 @external(erlang, "erlang", "unique_integer")
 fn unique_integer(options: List(a)) -> Int
@@ -53,5 +54,23 @@ pub fn fold_into(
 ) {
   fn(context, events) {
     list.fold(events, zero, apply) |> update_context(context, _)
+  }
+}
+
+pub fn query_event_log(
+  db: pog.Connection,
+  facts: List(Fact(event, context)),
+  initial_context: context,
+  event_decoder: fn(String, Dynamic) -> Result(event, String),
+) -> Result(context, String) {
+  let combined_filter = event_filter(facts)
+
+  case event_log.query_events_with_tags(db, combined_filter, event_decoder) {
+    Ok(#(events_by_fact, _version)) -> {
+      let context_builder = build_context(facts)
+      let final_context = context_builder(events_by_fact, initial_context)
+      Ok(final_context)
+    }
+    Error(_err) -> Error("Failed to load events from database")
   }
 }

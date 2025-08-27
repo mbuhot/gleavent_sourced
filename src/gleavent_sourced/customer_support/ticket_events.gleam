@@ -12,6 +12,11 @@ pub type TicketEvent {
   )
   TicketAssigned(ticket_id: String, assignee: String, assigned_at: String)
   TicketClosed(ticket_id: String, resolution: String, closed_at: String)
+  TicketMarkedDuplicate(
+    duplicate_ticket_id: String,
+    original_ticket_id: String,
+    marked_at: String,
+  )
 }
 
 pub fn encode(event: TicketEvent) -> #(String, json.Json) {
@@ -44,6 +49,15 @@ pub fn encode(event: TicketEvent) -> #(String, json.Json) {
         ])
       #("TicketClosed", payload)
     }
+    TicketMarkedDuplicate(duplicate_ticket_id, original_ticket_id, marked_at) -> {
+      let payload =
+        json.object([
+          #("duplicate_ticket_id", json.string(duplicate_ticket_id)),
+          #("original_ticket_id", json.string(original_ticket_id)),
+          #("marked_at", json.string(marked_at)),
+        ])
+      #("TicketMarkedDuplicate", payload)
+    }
   }
 }
 
@@ -57,6 +71,7 @@ pub fn decode(event_type: String, payload_dynamic: Dynamic) {
     "TicketOpened" -> decode_with(ticket_opened_decoder())
     "TicketAssigned" -> decode_with(ticket_assigned_decoder())
     "TicketClosed" -> decode_with(ticket_closed_decoder())
+    "TicketMarkedDuplicate" -> decode_with(ticket_marked_duplicate_decoder())
     _ -> Error("Unknown event type: " <> event_type)
   }
 }
@@ -81,4 +96,15 @@ pub fn ticket_closed_decoder() -> decode.Decoder(TicketEvent) {
   use resolution <- decode.field("resolution", decode.string)
   use closed_at <- decode.field("closed_at", decode.string)
   decode.success(TicketClosed(ticket_id, resolution, closed_at))
+}
+
+pub fn ticket_marked_duplicate_decoder() -> decode.Decoder(TicketEvent) {
+  use duplicate_ticket_id <- decode.field("duplicate_ticket_id", decode.string)
+  use original_ticket_id <- decode.field("original_ticket_id", decode.string)
+  use marked_at <- decode.field("marked_at", decode.string)
+  decode.success(TicketMarkedDuplicate(
+    duplicate_ticket_id,
+    original_ticket_id,
+    marked_at,
+  ))
 }

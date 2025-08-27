@@ -19,24 +19,29 @@ pub fn create_test_metadata() -> dict.Dict(String, String) {
 pub fn complete_ticket_lifecycle_test() {
   test_runner.txn(fn(db) {
     // Test complete ticket lifecycle: open -> assign -> close
-    let ticket_events = [
+    let opened_event =
       ticket_events.TicketOpened(
         ticket_id: "T-001",
         title: "Fix login bug",
         description: "Users cannot log in with special characters",
         priority: "high",
-      ),
+      )
+
+    let assigned_event =
       ticket_events.TicketAssigned(
         ticket_id: "T-001",
         assignee: "john.doe@example.com",
         assigned_at: "2024-01-15T10:30:00Z",
-      ),
+      )
+
+    let closed_event =
       ticket_events.TicketClosed(
         ticket_id: "T-001",
         resolution: "Fixed character encoding in login form",
         closed_at: "2024-01-16T14:45:00Z",
-      ),
-    ]
+      )
+
+    let ticket_events = [opened_event, assigned_event, closed_event]
 
     let test_metadata = create_test_metadata()
 
@@ -71,17 +76,9 @@ pub fn complete_ticket_lifecycle_test() {
     let assert 3 = list.length(events)
 
     // Verify we have the correct event types by checking the actual events
-    let event_types =
-      list.map(events, fn(event) {
-        case event {
-          ticket_events.TicketOpened(..) -> "TicketOpened"
-          ticket_events.TicketAssigned(..) -> "TicketAssigned"
-          ticket_events.TicketClosed(..) -> "TicketClosed"
-        }
-      })
-    let assert True = list.contains(event_types, "TicketOpened")
-    let assert True = list.contains(event_types, "TicketAssigned")
-    let assert True = list.contains(event_types, "TicketClosed")
+    assert list.contains(events, opened_event)
+    assert list.contains(events, assigned_event)
+    assert list.contains(events, closed_event)
   })
 }
 
@@ -243,7 +240,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
     // Simulate concurrent modification scenario
 
     // Step 1: Process A reads current state
-    let initial_event =
+    let opened_event =
       ticket_events.TicketOpened(
         ticket_id: "T-200",
         title: "Concurrency test ticket",
@@ -256,7 +253,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
     let assert Ok(event_log.AppendSuccess) =
       event_log.append_events(
         db,
-        [initial_event],
+        [opened_event],
         ticket_events.encode,
         test_metadata,
         event_filter.new(),
@@ -276,7 +273,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
     let assert 1 = list.length(initial_events)
 
     // Step 2: Process B modifies the ticket (simulating concurrent access)
-    let process_b_event =
+    let assignment_event_b =
       ticket_events.TicketAssigned(
         ticket_id: "T-200",
         assignee: "process.b@example.com",
@@ -286,7 +283,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
     let assert Ok(event_log.AppendSuccess) =
       event_log.append_events(
         db,
-        [process_b_event],
+        [assignment_event_b],
         ticket_events.encode,
         test_metadata,
         event_filter.new(),
@@ -340,17 +337,17 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       event_log.query_events(db, final_filter, ticket_events.decode)
 
     // Should have only 2 events: initial + Process B's assignment
-    let assert 2 = list.length(final_events)
-    let event_types =
-      list.map(final_events, fn(event) {
-        case event {
-          ticket_events.TicketOpened(..) -> "TicketOpened"
-          ticket_events.TicketAssigned(..) -> "TicketAssigned"
-          ticket_events.TicketClosed(..) -> "TicketClosed"
-        }
-      })
-    let assert True = list.contains(event_types, "TicketOpened")
-    let assert True = list.contains(event_types, "TicketAssigned")
-    let assert False = list.contains(event_types, "TicketClosed")
+    assert list.length(final_events) == 2
+    assert list.contains(final_events, opened_event)
+    assert list.contains(final_events, assignment_event_b)
+
+    // Define a closed event that should NOT be in the results
+    let closed_event =
+      ticket_events.TicketClosed(
+        ticket_id: "T-200",
+        resolution: "Not actually closed",
+        closed_at: "2024-01-01T12:00:00Z",
+      )
+    assert !list.contains(final_events, closed_event)
   })
 }

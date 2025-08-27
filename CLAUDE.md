@@ -60,8 +60,28 @@ No hallucinated success metrics or other nonsense.
 - Test functions must end with `_test`
 - Test names must be specific: `name_has_max_length_32_test` not `business_logic_test`
 - Group related assertions - test system behavior, not restate declarative code
-- Use `let assert Ok(expected) = actual` in test code for pattern matching and extracting values
-- Use `assert value == expected` for equality checks (NOT `let assert expected = value`)
+- Use `let assert Ok(expected) = actual` ONLY for pattern matching and extracting values from Results/Options/Tuples
+- Use `assert value == expected` for ALL equality checks and boolean assertions
+- NEVER use `let assert True = boolean_expression` - use `assert boolean_expression` instead
+- NEVER use `let assert False = boolean_expression` - use `assert !boolean_expression` instead
+- Examples:
+  ```gleam
+  // CORRECT - pattern matching to extract values
+  let assert Ok(events) = command_handler.execute(...)
+  let assert [first_event, second_event] = events
+  let assert #(result, count) = query_result
+  
+  // CORRECT - boolean and equality assertions  
+  assert list.length(events) == 2
+  assert list.contains(events, expected_event)
+  assert user.name == "John"
+  assert !user.is_deleted
+  
+  // WRONG - using let assert for equality/boolean checks
+  let assert True = list.contains(events, expected_event)  // BAD
+  let assert 2 = list.length(events)  // BAD
+  let assert "John" = user.name  // BAD
+  ```
 - NEVER use `should` module
 - NEVER put assert/panic inside conditionals - control test setup to know what to expect
 - Create test-specific resources (DB pools, processes) rather than depending on application state

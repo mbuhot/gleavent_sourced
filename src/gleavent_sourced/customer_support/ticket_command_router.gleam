@@ -1,10 +1,11 @@
 import gleavent_sourced/command_handler.{type CommandResult}
 import gleavent_sourced/customer_support/assign_ticket_handler
 import gleavent_sourced/customer_support/close_ticket_handler
+import gleavent_sourced/customer_support/mark_duplicate_handler
 import gleavent_sourced/customer_support/open_ticket_handler
 import gleavent_sourced/customer_support/ticket_commands.{
-  type AssignTicketCommand, type CloseTicketCommand, type OpenTicketCommand,
-  type TicketError,
+  type AssignTicketCommand, type CloseTicketCommand, type MarkDuplicateCommand,
+  type OpenTicketCommand, type TicketError,
 }
 import gleavent_sourced/customer_support/ticket_events
 import pog
@@ -14,6 +15,7 @@ pub type TicketCommand {
   OpenTicket(OpenTicketCommand)
   AssignTicket(AssignTicketCommand)
   CloseTicket(CloseTicketCommand)
+  MarkDuplicate(MarkDuplicateCommand)
 }
 
 // Router function - pattern matches on command type and delegates to appropriate handler
@@ -34,6 +36,11 @@ pub fn handle_ticket_command(
     CloseTicket(close_cmd) -> {
       let handler = close_ticket_handler.create_close_ticket_handler(close_cmd)
       command_handler.execute(db, handler, close_cmd, 3)
+    }
+    MarkDuplicate(mark_cmd) -> {
+      let handler =
+        mark_duplicate_handler.create_mark_duplicate_handler(mark_cmd)
+      command_handler.execute(db, handler, mark_cmd, 3)
     }
   }
 }
