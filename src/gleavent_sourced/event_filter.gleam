@@ -90,14 +90,15 @@ pub fn attr_null(field: String) -> AttributeFilter {
 
 /// Set a tag on all filter conditions in this EventFilter
 pub fn with_tag(filter: EventFilter, tag: String) -> EventFilter {
-  let tagged_filters = list.map(filter.filters, fn(condition) {
-    FilterCondition(
-      event_type: condition.event_type,
-      filter_expr: condition.filter_expr,
-      params: condition.params,
-      tag: option.Some(tag),
-    )
-  })
+  let tagged_filters =
+    list.map(filter.filters, fn(condition) {
+      FilterCondition(
+        event_type: condition.event_type,
+        filter_expr: condition.filter_expr,
+        params: condition.params,
+        tag: option.Some(tag),
+      )
+    })
   EventFilter(filters: tagged_filters)
 }
 

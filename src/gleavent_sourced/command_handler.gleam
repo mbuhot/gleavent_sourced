@@ -1,16 +1,18 @@
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/json
+
 import gleam/result
 import gleavent_sourced/event_filter.{type EventFilter}
 import gleavent_sourced/event_log
+
 import pog
 
 // Generic command handler definition
 pub type CommandHandler(command, event, context, error) {
   CommandHandler(
     event_filter: EventFilter,
-    context_reducer: fn(List(event), context) -> context,
+    context_reducer: fn(dict.Dict(String, List(event)), context) -> context,
     initial_context: context,
     command_logic: fn(command, context) -> Result(List(event), error),
     event_mapper: fn(String, Dynamic) -> Result(event, String),
@@ -32,12 +34,16 @@ fn load_events_and_build_context(
 ) -> Result(#(context, Int, EventFilter), String) {
   let filter = handler.event_filter
 
-  use #(loaded_events, max_seq) <- result.try(
-    event_log.query_events(db, filter, handler.event_mapper)
-    |> result.map_error(fn(_) { "Failed to load events for command processing" }),
+  use #(events_by_fact, max_seq) <- result.try(
+    event_log.query_events_with_tags(db, filter, handler.event_mapper)
+    |> result.map_error(fn(_) {
+      "Failed to load tagged events for command processing"
+    }),
   )
 
-  let context = handler.context_reducer(loaded_events, handler.initial_context)
+  // Let the context_reducer handle the tagged events
+  let context = handler.context_reducer(events_by_fact, handler.initial_context)
+
   Ok(#(context, max_seq, filter))
 }
 

@@ -17,7 +17,7 @@ pub fn create_open_ticket_handler() -> CommandHandler(
 ) {
   command_handler.CommandHandler(
     event_filter: event_filter.new(),
-    context_reducer: fn(_events, _initial) {
+    context_reducer: fn(_events_by_fact, _initial) {
       // No context needed for new tickets
       Nil
     },

@@ -2,13 +2,16 @@ import gleam/dict
 import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 
 import gleavent_sourced/command_handler.{CommandAccepted, CommandRejected}
 import gleavent_sourced/customer_support/ticket_command_router
 import gleavent_sourced/customer_support/ticket_commands
 import gleavent_sourced/customer_support/ticket_events
+import gleavent_sourced/customer_support/ticket_facts
 import gleavent_sourced/event_filter
 import gleavent_sourced/event_log
+import gleavent_sourced/facts
 import gleavent_sourced/test_runner
 
 // Example types for testing
@@ -44,7 +47,7 @@ pub fn command_handler_type_creation_test() {
   let handler =
     command_handler.CommandHandler(
       event_filter: event_filter.new(),
-      context_reducer: fn(_events, context) { context },
+      context_reducer: fn(_events_by_fact, context) { context },
       initial_context: TicketContext(existing_tickets: []),
       command_logic: fn(command, _context) {
         case command {
@@ -383,6 +386,94 @@ pub fn close_ticket_handler_with_stateful_business_rules_test() {
   })
 }
 
+pub fn tagged_event_isolation_integration_test() {
+  test_runner.txn(fn(db) {
+    // Test that facts with auto-generated IDs work with tagged event isolation
+    // This verifies the complete SQL-level tagging pipeline
+
+    // Create facts for testing - these will have auto-generated IDs and tagged filters
+    let exists_fact =
+      ticket_facts.exists("T-100", fn(context, value) {
+        TaggedTestContext(..context, ticket_exists: value)
+      })
+
+    let closed_fact =
+      ticket_facts.is_closed("T-100", fn(context, value) {
+        TaggedTestContext(..context, ticket_closed: value)
+      })
+
+    // Verify facts have unique IDs and are properly tagged
+    assert exists_fact.id != closed_fact.id
+
+    let exists_filter_json = event_filter.to_string(exists_fact.event_filter)
+    let closed_filter_json = event_filter.to_string(closed_fact.event_filter)
+
+    assert string.contains(
+      exists_filter_json,
+      "\"fact_id\":\"" <> exists_fact.id <> "\"",
+    )
+    assert string.contains(
+      closed_filter_json,
+      "\"fact_id\":\"" <> closed_fact.id <> "\"",
+    )
+
+    // Create a command that will use tagged event isolation
+    let initial_context =
+      TaggedTestContext(ticket_exists: False, ticket_closed: False)
+    let facts_list = [exists_fact, closed_fact]
+
+    // Create test command handler with tagged isolation using actual ticket types
+    let handler =
+      command_handler.CommandHandler(
+        event_filter: facts.event_filter(facts_list),
+        context_reducer: facts.build_context(facts_list),
+        initial_context: initial_context,
+        command_logic: fn(cmd, ctx) {
+          case cmd {
+            ticket_commands.OpenTicketCommand(
+              ticket_id,
+              title,
+              description,
+              priority,
+            ) -> {
+              case ctx.ticket_exists {
+                False ->
+                  Ok([
+                    ticket_events.TicketOpened(
+                      ticket_id,
+                      title,
+                      description,
+                      priority,
+                    ),
+                  ])
+                True ->
+                  Error(ticket_commands.ValidationError("Ticket already exists"))
+              }
+            }
+          }
+        },
+        event_mapper: ticket_events.decode,
+        event_converter: ticket_events.encode,
+        metadata_generator: fn(_cmd, _ctx) { dict.new() },
+      )
+
+    // Execute command with tagged isolation - this should work without event duplication
+    let test_command =
+      ticket_commands.OpenTicketCommand(
+        "T-100",
+        "Test Ticket",
+        "Test Description",
+        "low",
+      )
+    let assert Ok(CommandAccepted(_events)) =
+      command_handler.execute(db, handler, test_command, 3)
+  })
+}
+
+pub type TaggedTestContext {
+  TaggedTestContext(ticket_exists: Bool, ticket_closed: Bool)
+}
+
 pub fn optimistic_concurrency_conflict_detection_test() {
   test_runner.txn(fn(db) {
     // Store initial event to establish baseline
@@ -412,11 +503,15 @@ pub fn optimistic_concurrency_conflict_detection_test() {
           |> event_filter.for_type("TicketOpened", [
             event_filter.attr_string("ticket_id", "T-100"),
           ])
+          |> event_filter.with_tag("test_opened_fact")
           |> event_filter.for_type("TicketAssigned", [
             event_filter.attr_string("ticket_id", "T-100"),
-          ]),
-        context_reducer: fn(events, _initial) {
-          list.fold(events, None, fn(current_assignee, event) {
+          ])
+          |> event_filter.with_tag("test_assigned_fact"),
+        context_reducer: fn(events_by_fact, _initial) {
+          // Flatten all events from all fact IDs and process them
+          let all_events = dict.values(events_by_fact) |> list.flatten
+          list.fold(all_events, None, fn(current_assignee, event) {
             case event {
               ticket_events.TicketAssigned(_, assignee, _) -> Some(assignee)
               _ -> current_assignee

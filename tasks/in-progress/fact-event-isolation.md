@@ -255,12 +255,19 @@ We'll use the **SQL-Level Event Tagging** approach as it provides the best balan
 
 ## Task Breakdown
 
-- [ ] Update `Fact` type in `facts.gleam` to include auto-generated `id` field using `erlang.unique_integer/0`
-- [ ] Add a new_fact constructor function in facts.gleam to create a fact with auto-generated ID
-- [ ] Create `event_filter_to_json_with_id` function to convert EventFilter + fact_id to JSON format
-- [ ] Update `build_context` to use new `ReadEventsWithFactTags` query with fact ID tagging
-- [ ] Add tests to verify fact isolation works correctly
-- [ ] Add integration tests to ensure handler behavior unchanged
+- [x] Update `Fact` type in `facts.gleam` to include auto-generated `id` field using `erlang.unique_integer/0`
+- [x] Add a new_fact constructor function in facts.gleam to create a fact with auto-generated ID
+- [x] Implement SQL-level event tagging system (replaced individual JSON conversion with comprehensive tagging)
+  - [x] Add `tag: Option(String)` field to `FilterCondition` 
+  - [x] Update `event_filter.to_string()` to include `fact_id` field when tagged
+  - [x] Add `event_filter.with_tag()` function to set tags on filters
+  - [x] Auto-tag filters in `facts.new_fact()` with unique IDs
+- [x] Implement real `ReadEventsWithFactTags` SQL query with parrot bindings
+- [x] Add `event_log.query_events_with_tags()` function for tagged event loading and routing
+- [x] Add comprehensive tests to verify fact isolation works correctly
+- [ ] Integrate tagged event loading into command handler pipeline
+- [ ] Update existing command handlers to use tagged event isolation  
+- [ ] Add integration tests to ensure handler behavior unchanged from external perspective
 
 ## Success Criteria
 

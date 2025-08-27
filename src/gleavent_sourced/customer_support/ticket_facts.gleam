@@ -10,7 +10,6 @@ fn for_type_with_id(event_type, ticket_id) {
   ])
 }
 
-
 // Fact: Whether a ticket exists (derived from TicketOpened)
 pub fn exists(
   ticket_id: String,
