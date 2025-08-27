@@ -9,7 +9,7 @@ import pog
 // Generic command handler definition
 pub type CommandHandler(command, event, context, error) {
   CommandHandler(
-    event_filter: fn(command) -> EventFilter,
+    event_filter: EventFilter,
     context_reducer: fn(List(event), context) -> context,
     initial_context: context,
     command_logic: fn(command, context) -> Result(List(event), error),
@@ -29,9 +29,8 @@ pub type CommandResult(event, error) {
 fn load_events_and_build_context(
   db: pog.Connection,
   handler: CommandHandler(command, event, context, error),
-  command: command,
 ) -> Result(#(context, Int, EventFilter), String) {
-  let filter = handler.event_filter(command)
+  let filter = handler.event_filter
 
   use #(loaded_events, max_seq) <- result.try(
     event_log.query_events(db, filter, handler.event_mapper)
@@ -72,7 +71,6 @@ pub fn execute(
   use #(context, max_seq, filter) <- result.try(load_events_and_build_context(
     db,
     handler,
-    command,
   ))
 
   case handler.command_logic(command, context) {

@@ -1,5 +1,3 @@
-import gleam/dict
-import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
@@ -8,11 +6,33 @@ import gleavent_sourced/customer_support/ticket_commands.{
   type CloseTicketCommand, type TicketError, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events
-import gleavent_sourced/event_filter
+import gleavent_sourced/customer_support/ticket_facts
+
+// Create the CommandHandler for CloseTicket
+pub fn create_close_ticket_handler(
+  command: CloseTicketCommand,
+) -> CommandHandler(
+  CloseTicketCommand,
+  ticket_events.TicketEvent,
+  TicketCloseContext,
+  TicketError,
+) {
+  let facts = facts(command)
+
+  let initial_context = Ctx(
+    exists: False,
+    is_closed: False,
+    current_assignee: None,
+    priority: None,
+  )
+  ticket_commands.make_handler(
+    facts, initial_context, execute
+  )
+}
 
 // Context for tracking ticket state for closing
 pub type TicketCloseContext {
-  TicketCloseContext(
+  Ctx(
     exists: Bool,
     is_closed: Bool,
     current_assignee: Option(String),
@@ -20,56 +40,19 @@ pub type TicketCloseContext {
   )
 }
 
-// Create the CommandHandler for CloseTicket
-pub fn create_close_ticket_handler() -> CommandHandler(
-  CloseTicketCommand,
-  ticket_events.TicketEvent,
-  TicketCloseContext,
-  TicketError,
-) {
-  command_handler.CommandHandler(
-    event_filter: event_filter,
-    context_reducer: reducer,
-    initial_context: initial_context(),
-    command_logic: execute,
-    event_mapper: ticket_events.ticket_event_mapper,
-    event_converter: ticket_events.ticket_event_to_type_and_payload,
-    metadata_generator: metadata,
-  )
-}
-
-fn initial_context() -> TicketCloseContext {
-  TicketCloseContext(
-    exists: False,
-    is_closed: False,
-    current_assignee: None,
-    priority: None,
-  )
-}
-
-fn event_filter(command: CloseTicketCommand) -> event_filter.EventFilter {
-  let id_filter = event_filter.attr_string("ticket_id", command.ticket_id)
-  event_filter.new()
-  |> event_filter.for_type("TicketOpened", [id_filter])
-  |> event_filter.for_type("TicketAssigned", [id_filter])
-  |> event_filter.for_type("TicketClosed", [id_filter])
-}
-
-fn reducer(
-  events: List(ticket_events.TicketEvent),
-  initial: TicketCloseContext,
-) -> TicketCloseContext {
-  // Fold events to build current ticket state
-  list.fold(events, initial, fn(context, event) {
-    case event {
-      ticket_events.TicketOpened(_, _, _, priority) ->
-        TicketCloseContext(..context, exists: True, priority: Some(priority))
-      ticket_events.TicketAssigned(_, assignee, _) ->
-        TicketCloseContext(..context, current_assignee: Some(assignee))
-      ticket_events.TicketClosed(..) ->
-        TicketCloseContext(..context, is_closed: True)
-    }
-  })
+fn facts(command: CloseTicketCommand) {
+  [
+    ticket_facts.exists(command.ticket_id, fn(c, exists) { Ctx(..c, exists:) }),
+    ticket_facts.current_assignee(command.ticket_id, fn(c, current_assignee) {
+      Ctx(..c, current_assignee:)
+    }),
+    ticket_facts.is_closed(command.ticket_id, fn(c, is_closed) {
+      Ctx(..c, is_closed:)
+    }),
+    ticket_facts.priority(command.ticket_id, fn(c, priority) {
+      Ctx(..c, priority:)
+    }),
+  ]
 }
 
 fn execute(
@@ -90,18 +73,7 @@ fn execute(
   ])
 }
 
-fn metadata(
-  command: CloseTicketCommand,
-  _context: TicketCloseContext,
-) -> dict.Dict(String, String) {
-  dict.from_list([
-    #("command_type", "CloseTicket"),
-    #("ticket_id", command.ticket_id),
-    #("closed_by", command.closed_by),
-    #("source", "ticket_service"),
-    #("version", "1"),
-  ])
-}
+
 
 fn validate_ticket_exists(
   context: TicketCloseContext,

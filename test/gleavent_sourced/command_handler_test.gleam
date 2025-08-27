@@ -43,7 +43,7 @@ pub fn command_handler_type_creation_test() {
   // Create a simple command handler
   let handler =
     command_handler.CommandHandler(
-      event_filter: fn(_command) { event_filter.new() },
+      event_filter: event_filter.new(),
       context_reducer: fn(_events, context) { context },
       initial_context: TicketContext(existing_tickets: []),
       command_logic: fn(command, _context) {
@@ -408,19 +408,13 @@ pub fn optimistic_concurrency_conflict_detection_test() {
     // Create a handler that breaks convention by inserting event during business logic
     let conflicting_handler =
       command_handler.CommandHandler(
-        event_filter: fn(command) {
-          case command {
-            ticket_commands.AssignTicketCommand(ticket_id, _, _) -> {
-              event_filter.new()
-              |> event_filter.for_type("TicketOpened", [
-                event_filter.attr_string("ticket_id", ticket_id),
-              ])
-              |> event_filter.for_type("TicketAssigned", [
-                event_filter.attr_string("ticket_id", ticket_id),
-              ])
-            }
-          }
-        },
+        event_filter: event_filter.new()
+          |> event_filter.for_type("TicketOpened", [
+            event_filter.attr_string("ticket_id", "T-100"),
+          ])
+          |> event_filter.for_type("TicketAssigned", [
+            event_filter.attr_string("ticket_id", "T-100"),
+          ]),
         context_reducer: fn(events, _initial) {
           list.fold(events, None, fn(current_assignee, event) {
             case event {

@@ -16,10 +16,7 @@ pub fn create_open_ticket_handler() -> CommandHandler(
   TicketError,
 ) {
   command_handler.CommandHandler(
-    event_filter: fn(_command) {
-      // New tickets don't need to load existing events
-      event_filter.new()
-    },
+    event_filter: event_filter.new(),
     context_reducer: fn(_events, _initial) {
       // No context needed for new tickets
       Nil

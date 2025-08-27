@@ -9,6 +9,10 @@ pub type EventFilter {
   EventFilter(filters: List(FilterCondition))
 }
 
+pub fn merge(l: EventFilter, r: EventFilter) {
+  EventFilter(list.append(l.filters, r.filters))
+}
+
 /// Internal representation of a single filter condition
 pub opaque type FilterCondition {
   FilterCondition(
