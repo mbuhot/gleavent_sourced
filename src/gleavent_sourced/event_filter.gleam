@@ -2,6 +2,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/json
 import gleam/list
+import gleam/option.{type Option}
 import gleam/string
 
 /// Builder for creating event filters with a clean API
@@ -19,6 +20,7 @@ pub opaque type FilterCondition {
     event_type: String,
     filter_expr: String,
     params: Dict(String, json.Json),
+    tag: Option(String),
   )
 }
 
@@ -86,6 +88,19 @@ pub fn attr_null(field: String) -> AttributeFilter {
   FieldIsNull(field: field)
 }
 
+/// Set a tag on all filter conditions in this EventFilter
+pub fn with_tag(filter: EventFilter, tag: String) -> EventFilter {
+  let tagged_filters = list.map(filter.filters, fn(condition) {
+    FilterCondition(
+      event_type: condition.event_type,
+      filter_expr: condition.filter_expr,
+      params: condition.params,
+      tag: option.Some(tag),
+    )
+  })
+  EventFilter(filters: tagged_filters)
+}
+
 /// Convert the event filter to a JSON string for use with SQL queries
 pub fn to_string(filter: EventFilter) -> String {
   let filter_objects =
@@ -93,11 +108,18 @@ pub fn to_string(filter: EventFilter) -> String {
       let params_list = dict.to_list(condition.params)
       let params_json = json.object(params_list)
 
-      json.object([
+      let base_fields = [
         #("event_type", json.string(condition.event_type)),
         #("filter", json.string(condition.filter_expr)),
         #("params", params_json),
-      ])
+      ]
+
+      let fields = case condition.tag {
+        option.Some(tag) -> [#("fact_id", json.string(tag)), ..base_fields]
+        option.None -> base_fields
+      }
+
+      json.object(fields)
     })
 
   filter_objects
@@ -117,6 +139,7 @@ fn combine_attribute_filters_to_condition(
         event_type: event_type,
         filter_expr: "$ ? (true)",
         params: dict.new(),
+        tag: option.None,
       )
     [single_filter] -> {
       let part = attribute_filter_to_condition_part(single_filter, 0)
@@ -124,6 +147,7 @@ fn combine_attribute_filters_to_condition(
         event_type: event_type,
         filter_expr: "$ ? (" <> part.expression <> ")",
         params: part.params,
+        tag: option.None,
       )
     }
     multiple_filters -> {
@@ -144,6 +168,7 @@ fn combine_attribute_filters_to_condition(
         event_type: event_type,
         filter_expr: combined_expr,
         params: combined_params,
+        tag: option.None,
       )
     }
   }

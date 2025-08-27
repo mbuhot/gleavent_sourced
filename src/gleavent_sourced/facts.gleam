@@ -19,9 +19,11 @@ pub fn new_fact(
   event_filter event_filter: event_filter.EventFilter,
   apply_events apply_events: fn(context, List(event)) -> context,
 ) -> Fact(event, context) {
+  let id = int.to_string(unique_integer([]))
+  let tagged_filter = event_filter.with_tag(event_filter, id)
   Fact(
-    id: int.to_string(unique_integer([])),
-    event_filter: event_filter,
+    id: id,
+    event_filter: tagged_filter,
     apply_events: apply_events,
   )
 }
