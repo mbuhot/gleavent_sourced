@@ -38,11 +38,14 @@ pub fn event_filter(
 
 pub fn build_context(facts: List(Fact(event, context))) {
   fn(events: List(event), context) {
-    list.fold(facts, context, fn(context, fact) {
-      fact.apply_events(context, events)
+    list.fold(facts, context, fn(acc_context, fact) {
+      fact.apply_events(acc_context, events)
     })
   }
 }
+
+
+
 
 pub fn fold_into(update_context: fn(context, value) -> context, zero: value, apply: fn(value, event) -> value) {
   fn(context, events) {

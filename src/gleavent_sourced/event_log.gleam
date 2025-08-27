@@ -3,6 +3,7 @@ import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/result
 
 import gleam/erlang/process
@@ -135,6 +136,74 @@ pub fn query_events(
 
       case mapped_events {
         Ok(events) -> Ok(#(events, max_sequence))
+        Error(err) -> Error(err)
+      }
+    }
+    Error(err) -> Error(DatabaseError(err))
+  }
+}
+
+/// Query events with SQL-level fact tagging and return events grouped by fact ID
+pub fn query_events_with_tags(
+  db: pog.Connection,
+  filter: EventFilter,
+  event_mapper: fn(String, Dynamic) -> Result(event_type, String),
+) -> Result(#(dict.Dict(String, List(event_type)), Int), QueryError) {
+  let filters_json = event_filter.to_string(filter)
+
+  let #(select_sql, select_params, decoder) =
+    sql.read_events_with_fact_tags(filters: filters_json)
+
+  let select_query =
+    pog.query(select_sql)
+    |> parrot_pog.parameters(select_params)
+    |> pog.returning(decoder)
+
+  case pog.execute(select_query, on: db) {
+    Ok(returned) -> {
+      let raw_rows = returned.rows
+
+      // Get max sequence number (all rows have the same value)
+      let max_sequence = case raw_rows {
+        [] -> 0
+        [first, ..] -> first.current_max_sequence
+      }
+
+      // Group events by fact ID using matching_facts JSON
+      let events_by_fact_result =
+        list.try_fold(raw_rows, dict.new(), fn(acc, row) {
+          case json.parse(row.payload, decode.dynamic) {
+            Ok(payload_dynamic) ->
+              case event_mapper(row.event_type, payload_dynamic) {
+                Ok(event) ->
+                  case json.parse(row.matching_facts, decode.list(decode.string)) {
+                    Ok(fact_ids) -> {
+                      let updated_dict = list.fold(fact_ids, acc, fn(dict_acc, fact_id) {
+                        dict.upsert(dict_acc, fact_id, fn(existing_events) {
+                          case existing_events {
+                            Some(events) -> [event, ..events]
+                            None -> [event]
+                          }
+                        })
+                      })
+                      Ok(updated_dict)
+                    }
+                    Error(_) -> Error(MappingError("Failed to parse matching_facts JSON"))
+                  }
+                Error(msg) -> Error(MappingError(msg))
+              }
+            Error(err) -> Error(JsonParseError(err))
+          }
+        })
+
+      case events_by_fact_result {
+        Ok(events_by_fact) -> {
+          // Reverse event lists to maintain chronological order
+          let ordered_events_by_fact = dict.map_values(events_by_fact, fn(_, events) {
+            list.reverse(events)
+          })
+          Ok(#(ordered_events_by_fact, max_sequence))
+        }
         Error(err) -> Error(err)
       }
     }

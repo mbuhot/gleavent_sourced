@@ -51,17 +51,16 @@ matching_events AS (
 events_with_tags AS (
   SELECT
     e.*,
-    ARRAY(
+    to_jsonb(ARRAY(
       SELECT fc.fact_id
       FROM filter_conditions fc
       WHERE fc.event_type = e.event_type
         AND jsonb_path_exists(e.payload, fc.jsonpath_expr::jsonpath, fc.jsonpath_params)
-    ) as matching_facts
+    )) as matching_facts
   FROM matching_events e
 )
 SELECT
   *,
-  matching_facts,
   (SELECT MAX(sequence_number) FROM matching_events)::integer as current_max_sequence
 FROM events_with_tags
 ORDER BY sequence_number ASC;
