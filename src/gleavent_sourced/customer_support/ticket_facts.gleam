@@ -1,4 +1,3 @@
-import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/event_filter
@@ -11,11 +10,6 @@ fn for_type_with_id(event_type, ticket_id) {
   ])
 }
 
-fn fold_into(update_context, zero, apply) {
-  fn(context, events) {
-    list.fold(events, zero, apply) |> update_context(context, _)
-  }
-}
 
 // Fact: Whether a ticket exists (derived from TicketOpened)
 pub fn exists(
@@ -24,7 +18,7 @@ pub fn exists(
 ) -> facts.Fact(TicketEvent, context) {
   facts.Fact(
     event_filter: for_type_with_id("TicketOpened", ticket_id),
-    apply_events: fold_into(update_context, False, fn(acc, event) {
+    apply_events: facts.fold_into(update_context, False, fn(acc, event) {
       case event {
         ticket_events.TicketOpened(..) -> True
         _ -> acc
@@ -40,7 +34,7 @@ pub fn is_closed(
 ) -> facts.Fact(TicketEvent, context) {
   facts.Fact(
     event_filter: for_type_with_id("TicketClosed", ticket_id),
-    apply_events: fold_into(update_context, False, fn(acc, event) {
+    apply_events: facts.fold_into(update_context, False, fn(acc, event) {
       case event {
         ticket_events.TicketClosed(..) -> True
         _ -> acc
@@ -56,7 +50,7 @@ pub fn current_assignee(
 ) -> facts.Fact(TicketEvent, context) {
   facts.Fact(
     event_filter: for_type_with_id("TicketAssigned", ticket_id),
-    apply_events: fold_into(update_context, None, fn(acc, event) {
+    apply_events: facts.fold_into(update_context, None, fn(acc, event) {
       case event {
         ticket_events.TicketAssigned(_, assignee, _) -> Some(assignee)
         _ -> acc
@@ -72,7 +66,7 @@ pub fn priority(
 ) -> facts.Fact(TicketEvent, context) {
   facts.Fact(
     event_filter: for_type_with_id("TicketOpened", ticket_id),
-    apply_events: fold_into(update_context, None, fn(acc, event) {
+    apply_events: facts.fold_into(update_context, None, fn(acc, event) {
       case event {
         ticket_events.TicketOpened(_, _, _, priority) -> Some(priority)
         _ -> acc

@@ -24,3 +24,9 @@ pub fn build_context(facts: List(Fact(event, context))) {
     })
   }
 }
+
+pub fn fold_into(update_context: fn(context, value) -> context, zero: value, apply: fn(value, event) -> value) {
+  fn(context, events) {
+    list.fold(events, zero, apply) |> update_context(context, _)
+  }
+}
