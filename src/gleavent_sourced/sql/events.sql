@@ -33,6 +33,39 @@ SELECT
 FROM matching_events
 ORDER BY sequence_number ASC;
 
+-- name: ReadEventsWithFactTags :many
+WITH filter_conditions AS (
+  SELECT
+    filter_config ->> 'fact_id' as fact_id,
+    filter_config ->> 'event_type' as event_type,
+    filter_config ->> 'filter' as jsonpath_expr,
+    filter_config -> 'params' as jsonpath_params
+  FROM jsonb_array_elements(@filters) AS filter_config
+),
+matching_events AS (
+  SELECT DISTINCT e.*
+  FROM events e
+  JOIN filter_conditions fc ON e.event_type = fc.event_type
+  WHERE jsonb_path_exists(e.payload, fc.jsonpath_expr::jsonpath, fc.jsonpath_params)
+),
+events_with_tags AS (
+  SELECT
+    e.*,
+    ARRAY(
+      SELECT fc.fact_id
+      FROM filter_conditions fc
+      WHERE fc.event_type = e.event_type
+        AND jsonb_path_exists(e.payload, fc.jsonpath_expr::jsonpath, fc.jsonpath_params)
+    ) as matching_facts
+  FROM matching_events e
+)
+SELECT
+  *,
+  matching_facts,
+  (SELECT MAX(sequence_number) FROM matching_events)::integer as current_max_sequence
+FROM events_with_tags
+ORDER BY sequence_number ASC;
+
 -- name: BatchInsertEventsWithConflictCheck :one
 WITH filter_conditions AS (
   SELECT

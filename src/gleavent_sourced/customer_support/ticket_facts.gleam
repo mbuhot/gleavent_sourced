@@ -16,7 +16,7 @@ pub fn exists(
   ticket_id: String,
   update_context: fn(context, Bool) -> context,
 ) -> facts.Fact(TicketEvent, context) {
-  facts.Fact(
+  facts.new_fact(
     event_filter: for_type_with_id("TicketOpened", ticket_id),
     apply_events: facts.fold_into(update_context, False, fn(acc, event) {
       case event {
@@ -32,7 +32,7 @@ pub fn is_closed(
   ticket_id: String,
   update_context: fn(context, Bool) -> context,
 ) -> facts.Fact(TicketEvent, context) {
-  facts.Fact(
+  facts.new_fact(
     event_filter: for_type_with_id("TicketClosed", ticket_id),
     apply_events: facts.fold_into(update_context, False, fn(acc, event) {
       case event {
@@ -48,7 +48,7 @@ pub fn current_assignee(
   ticket_id: String,
   update_context: fn(context, Option(String)) -> context,
 ) -> facts.Fact(TicketEvent, context) {
-  facts.Fact(
+  facts.new_fact(
     event_filter: for_type_with_id("TicketAssigned", ticket_id),
     apply_events: facts.fold_into(update_context, None, fn(acc, event) {
       case event {
@@ -64,7 +64,7 @@ pub fn priority(
   ticket_id: String,
   update_context: fn(context, Option(String)) -> context,
 ) -> facts.Fact(TicketEvent, context) {
-  facts.Fact(
+  facts.new_fact(
     event_filter: for_type_with_id("TicketOpened", ticket_id),
     apply_events: facts.fold_into(update_context, None, fn(acc, event) {
       case event {

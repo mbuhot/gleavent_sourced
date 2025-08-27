@@ -1,11 +1,28 @@
+import gleam/int
 import gleam/list
 import gleavent_sourced/event_filter
+
+@external(erlang, "erlang", "unique_integer")
+fn unique_integer(options: List(a)) -> Int
 
 // Core fact abstraction - represents a domain concept derived from events
 pub type Fact(event, context) {
   Fact(
+    id: String,
     event_filter: event_filter.EventFilter,
     apply_events: fn(context, List(event)) -> context,
+  )
+}
+
+// Constructor to create a new Fact with auto-generated unique ID
+pub fn new_fact(
+  event_filter event_filter: event_filter.EventFilter,
+  apply_events apply_events: fn(context, List(event)) -> context,
+) -> Fact(event, context) {
+  Fact(
+    id: int.to_string(unique_integer([])),
+    event_filter: event_filter,
+    apply_events: apply_events,
   )
 }
 
