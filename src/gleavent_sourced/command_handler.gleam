@@ -14,6 +14,7 @@ pub type CommandHandler(command, event, context, error) {
     event_filter: EventFilter,
     context_reducer: fn(dict.Dict(String, List(event)), context) -> context,
     initial_context: context,
+    enrich_context: fn(pog.Connection, context) -> Result(context, String),
     command_logic: fn(command, context) -> Result(List(event), error),
     event_mapper: fn(String, Dynamic) -> Result(event, String),
     event_converter: fn(event) -> #(String, json.Json),
@@ -79,14 +80,16 @@ pub fn execute(
     handler,
   ))
 
-  case handler.command_logic(command, context) {
+  use enriched_context <- result.try(handler.enrich_context(db, context))
+
+  case handler.command_logic(command, enriched_context) {
     Error(business_error) -> Ok(CommandRejected(business_error))
     Ok(events) -> {
       use append_result <- result.try(append_events_with_conflict_detection(
         db,
         handler,
         command,
-        context,
+        enriched_context,
         events,
         filter,
         max_seq,

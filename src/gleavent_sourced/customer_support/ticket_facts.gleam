@@ -19,6 +19,14 @@ fn for_type_with_id(event_type, ticket_id) {
   ])
 }
 
+// FIXME: Inline into the single call site
+fn for_parent_child_relationships(parent_ticket_id) {
+  event_filter.new()
+  |> event_filter.for_type("TicketParentLinked", [
+    event_filter.attr_string("parent_ticket_id", parent_ticket_id),
+  ])
+}
+
 // Fact: Whether a ticket exists (derived from TicketOpened)
 pub fn exists(
   ticket_id: String,
@@ -98,6 +106,27 @@ pub fn duplicate_status(
         True, False -> DuplicateOf(original_id)
         False, True -> DuplicatedBy(duplicate_id)
         _, _ -> panic as "impossible"
+      }
+    }),
+  )
+}
+
+// Fact: List of child ticket IDs linked to a parent ticket
+// Returns List(String) of all child ticket IDs that are linked to this parent
+pub fn child_tickets(
+  parent_ticket_id: String,
+  update_context: fn(context, List(String)) -> context,
+) -> facts.Fact(TicketEvent, context) {
+  facts.new_fact(
+    event_filter: for_parent_child_relationships(parent_ticket_id),
+    apply_events: facts.fold_into(update_context, [], fn(acc, event) {
+      case event {
+        ticket_events.TicketParentLinked(child_id, parent_id) ->
+          case parent_id == parent_ticket_id {
+            True -> [child_id, ..acc]
+            False -> acc
+          }
+        _ -> acc
       }
     }),
   )

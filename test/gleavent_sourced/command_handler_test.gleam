@@ -49,6 +49,7 @@ pub fn command_handler_type_creation_test() {
       event_filter: event_filter.new(),
       context_reducer: fn(_events_by_fact, context) { context },
       initial_context: TicketContext(existing_tickets: []),
+      enrich_context: fn(_db, context) { Ok(context) },
       command_logic: fn(command, _context) {
         case command {
           OpenTicket(ticket_id, title) -> {
@@ -92,6 +93,7 @@ pub fn command_rejection_scenarios_test() {
         "",
         "Description",
         "medium",
+        parent_ticket_id: None,
       ))
     let assert Ok(result) =
       ticket_command_router.handle_ticket_command(empty_title_command, db)
@@ -110,6 +112,7 @@ pub fn command_rejection_scenarios_test() {
         "Valid title",
         "Description",
         "invalid",
+        parent_ticket_id: None,
       ))
     let assert Ok(result) =
       ticket_command_router.handle_ticket_command(invalid_priority_command, db)
@@ -132,6 +135,7 @@ pub fn context_building_with_assign_ticket_test() {
         "Initial ticket",
         "Test ticket",
         "medium",
+        parent_ticket_id: None,
       ))
     let assert Ok(CommandAccepted(_events)) =
       ticket_command_router.handle_ticket_command(create_command, db)
@@ -175,6 +179,7 @@ pub fn open_ticket_command_validation_test() {
         "Fix login bug",
         "Users cannot login",
         "high",
+        parent_ticket_id: None,
       ))
     let assert Ok(CommandAccepted(events)) =
       ticket_command_router.handle_ticket_command(valid_command, db)
@@ -194,6 +199,7 @@ pub fn open_ticket_command_validation_test() {
         "",
         "Description",
         "medium",
+        parent_ticket_id: None,
       ))
     let assert Ok(CommandRejected(ticket_commands.ValidationError(message))) =
       ticket_command_router.handle_ticket_command(empty_title_command, db)
@@ -206,6 +212,7 @@ pub fn open_ticket_command_validation_test() {
         "Test ticket",
         "Description",
         "urgent",
+        parent_ticket_id: None,
       ))
     let assert Ok(CommandRejected(ticket_commands.ValidationError(message))) =
       ticket_command_router.handle_ticket_command(invalid_priority_command, db)
@@ -295,6 +302,7 @@ pub fn close_ticket_handler_with_stateful_business_rules_test() {
         "High priority bug",
         "Critical system issue",
         "high",
+        parent_ticket_id: None,
       ))
     let assert Ok(CommandAccepted(_events)) =
       ticket_command_router.handle_ticket_command(create_command, db)
@@ -341,6 +349,7 @@ pub fn close_ticket_handler_with_stateful_business_rules_test() {
         "Another high priority bug",
         "System crash",
         "high",
+        parent_ticket_id: None,
       ))
     let assert Ok(CommandAccepted(_events)) =
       ticket_command_router.handle_ticket_command(create_command2, db)
@@ -428,6 +437,7 @@ pub fn tagged_event_isolation_integration_test() {
         event_filter: facts.event_filter(facts_list),
         context_reducer: facts.build_context(facts_list),
         initial_context: initial_context,
+        enrich_context: fn(_db, context) { Ok(context) },
         command_logic: fn(cmd, ctx) {
           case cmd {
             ticket_commands.OpenTicketCommand(
@@ -435,6 +445,7 @@ pub fn tagged_event_isolation_integration_test() {
               title,
               description,
               priority,
+              _parent_ticket_id,
             ) -> {
               case ctx.ticket_exists {
                 False ->
@@ -464,6 +475,7 @@ pub fn tagged_event_isolation_integration_test() {
         "Test Ticket",
         "Test Description",
         "low",
+        parent_ticket_id: None,
       )
     let assert Ok(CommandAccepted(_events)) =
       command_handler.execute(db, handler, test_command, 3)
@@ -519,6 +531,7 @@ pub fn optimistic_concurrency_conflict_detection_test() {
           })
         },
         initial_context: None,
+        enrich_context: fn(_db, context) { Ok(context) },
         command_logic: fn(command, current_assignee) {
           case command {
             ticket_commands.AssignTicketCommand(

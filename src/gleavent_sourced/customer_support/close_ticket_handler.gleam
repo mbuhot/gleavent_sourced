@@ -1,4 +1,6 @@
+import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
@@ -6,7 +8,9 @@ import gleavent_sourced/customer_support/ticket_commands.{
 }
 import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/customer_support/ticket_facts
+import gleavent_sourced/facts
 import gleavent_sourced/validation.{require, validate}
+import pog
 
 // Context built from facts to validate ticket closing business rules
 // Contains validation state for the ticket being closed
@@ -16,6 +20,8 @@ pub type TicketCloseContext {
     is_closed: Bool,
     current_assignee: Option(String),
     priority: Option(String),
+    linked_children: List(String),
+    open_children: List(String),
   )
 }
 
@@ -26,6 +32,8 @@ fn initial_context() {
     is_closed: False,
     current_assignee: None,
     priority: None,
+    linked_children: [],
+    open_children: [],
   )
 }
 
@@ -44,6 +52,9 @@ fn facts(ticket_id: String) {
     ticket_facts.priority(ticket_id, fn(ctx, priority) {
       TicketCloseContext(..ctx, priority:)
     }),
+    ticket_facts.child_tickets(ticket_id, fn(ctx, linked_children) {
+      TicketCloseContext(..ctx, linked_children:)
+    }),
   ]
 }
 
@@ -57,11 +68,48 @@ pub fn create_close_ticket_handler(
   TicketCloseContext,
   TicketError,
 ) {
-  ticket_commands.make_handler(
-    facts(command.ticket_id),
-    initial_context(),
-    execute,
-  )
+  ticket_commands.handler(initial_context(), execute)
+  |> ticket_commands.with_facts(facts(command.ticket_id))
+  |> ticket_commands.with_enriched_context(enrich_context)
+}
+
+// Second step: filter out closed children from linked children
+fn enrich_context(
+  db: pog.Connection,
+  context: TicketCloseContext,
+) -> Result(TicketCloseContext, String) {
+  case context.linked_children {
+    [] -> Ok(context)
+    children -> {
+      // build list of facts to query
+      let child_facts =
+        list.map(children, fn(child_id) {
+          ticket_facts.is_closed(child_id, fn(ctx, is_closed) {
+            [#(child_id, is_closed), ..ctx]
+          })
+        })
+
+      // query event log for all child fact results
+      use results <- result.try(
+        child_facts
+        |> facts.query_event_log(db, _, [], ticket_events.decode)
+        |> result.map_error(fn(_) {
+          "Failed to query child ticket closure status"
+        }),
+      )
+
+      // Filter down to open children
+      let open_children =
+        list.filter_map(results, fn(result) {
+          case result {
+            #(child_id, True) -> Ok(child_id)
+            _ -> Error(Nil)
+          }
+        })
+
+      Ok(TicketCloseContext(..context, open_children: open_children))
+    }
+  }
 }
 
 // Core business logic - validates rules then creates TicketClosed event
@@ -71,6 +119,7 @@ fn execute(
 ) -> Result(List(ticket_events.TicketEvent), TicketError) {
   use _ <- validate(ticket_exists, context)
   use _ <- validate(ticket_not_already_closed, context)
+  use _ <- validate(no_open_children, context)
   use _ <- validate(closer_permissions(_, command.closed_by), context)
   use _ <- validate(resolution_detail(_, command.resolution), context)
   use _ <- validate(closed_at, command.closed_at)
@@ -138,6 +187,14 @@ fn resolution_detail(
       }
     }
   }
+}
+
+// Validates the ticket has no open child tickets
+fn no_open_children(context: TicketCloseContext) -> Result(Nil, TicketError) {
+  require(
+    context.open_children == [],
+    BusinessRuleViolation("Cannot close parent ticket with open child tickets"),
+  )
 }
 
 // Validates the closed_at timestamp is not empty

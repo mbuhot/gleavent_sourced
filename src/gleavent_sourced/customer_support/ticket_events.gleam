@@ -17,6 +17,7 @@ pub type TicketEvent {
     original_ticket_id: String,
     marked_at: String,
   )
+  TicketParentLinked(ticket_id: String, parent_ticket_id: String)
 }
 
 pub fn encode(event: TicketEvent) -> #(String, json.Json) {
@@ -58,6 +59,14 @@ pub fn encode(event: TicketEvent) -> #(String, json.Json) {
         ])
       #("TicketMarkedDuplicate", payload)
     }
+    TicketParentLinked(ticket_id, parent_ticket_id) -> {
+      let payload =
+        json.object([
+          #("ticket_id", json.string(ticket_id)),
+          #("parent_ticket_id", json.string(parent_ticket_id)),
+        ])
+      #("TicketParentLinked", payload)
+    }
   }
 }
 
@@ -72,6 +81,7 @@ pub fn decode(event_type: String, payload_dynamic: Dynamic) {
     "TicketAssigned" -> decode_with(ticket_assigned_decoder())
     "TicketClosed" -> decode_with(ticket_closed_decoder())
     "TicketMarkedDuplicate" -> decode_with(ticket_marked_duplicate_decoder())
+    "TicketParentLinked" -> decode_with(ticket_parent_linked_decoder())
     _ -> Error("Unknown event type: " <> event_type)
   }
 }
@@ -107,4 +117,10 @@ pub fn ticket_marked_duplicate_decoder() -> decode.Decoder(TicketEvent) {
     original_ticket_id,
     marked_at,
   ))
+}
+
+pub fn ticket_parent_linked_decoder() -> decode.Decoder(TicketEvent) {
+  use ticket_id <- decode.field("ticket_id", decode.string)
+  use parent_ticket_id <- decode.field("parent_ticket_id", decode.string)
+  decode.success(TicketParentLinked(ticket_id, parent_ticket_id))
 }

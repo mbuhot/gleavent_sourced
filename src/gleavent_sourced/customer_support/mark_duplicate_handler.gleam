@@ -59,8 +59,8 @@ pub fn create_mark_duplicate_handler(
   TicketError,
 ) {
   ticket_commands.make_handler(
-    facts(command.original_ticket_id, command.duplicate_ticket_id),
     initial_context(),
+    facts(command.original_ticket_id, command.duplicate_ticket_id),
     execute,
   )
 }

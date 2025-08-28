@@ -138,7 +138,7 @@ fn combine_attribute_filters_to_condition(
     [] ->
       FilterCondition(
         event_type: event_type,
-        filter_expr: "$ ? (true)",
+        filter_expr: "$ ? (1 == 1)",
         params: dict.new(),
         tag: option.None,
       )

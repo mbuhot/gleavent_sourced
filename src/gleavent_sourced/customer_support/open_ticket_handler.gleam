@@ -23,13 +23,12 @@ pub fn create_open_ticket_handler() -> CommandHandler(
       Nil
     },
     initial_context: Nil,
+    enrich_context: fn(_db, context) { Ok(context) },
     command_logic: execute,
     event_mapper: ticket_events.decode,
     event_converter: ticket_events.encode,
-    metadata_generator: fn(command: OpenTicketCommand, _context) {
+    metadata_generator: fn(_command, _context) {
       dict.from_list([
-        #("command_type", "OpenTicket"),
-        #("ticket_id", command.ticket_id),
         #("source", "ticket_service"),
         #("version", "1"),
       ])

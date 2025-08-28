@@ -53,8 +53,8 @@ pub fn create_assign_ticket_handler(
   TicketError,
 ) {
   ticket_commands.make_handler(
-    facts(command.ticket_id),
     initial_context(),
+    facts(command.ticket_id),
     execute,
   )
 }

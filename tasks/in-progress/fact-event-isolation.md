@@ -44,7 +44,7 @@ let facts = [
 
 ### Use Case 2: Cross-Ticket Validation
 ```gleam
-// Command: "Close parent ticket" 
+// Command: "Close parent ticket"
 // Business rule: Can't close parent if child tickets are still open
 pub type CloseParentTicketCommand {
   CloseParentTicketCommand(parent_id: String, child_ids: List(String))
@@ -77,7 +77,7 @@ pub type BulkAssignCommand {
 let all_facts = list.flat_map(command.ticket_ids, fn(ticket_id) {
   [
     ticket_facts.exists(ticket_id, update_ticket_context),
-    ticket_facts.is_closed(ticket_id, update_ticket_context), 
+    ticket_facts.is_closed(ticket_id, update_ticket_context),
     ticket_facts.current_assignee(ticket_id, update_ticket_context),
   ]
 })
@@ -255,12 +255,21 @@ Result: Each fact's `apply_events` receives exactly the events it should process
 
 The system now uses SQL-level event tagging exclusively, providing perfect fact isolation with optimal performance and consistency.
 
+**✅ COMPLETED: Two-Step Query Architecture with enrich_context**
+
+Enhanced CommandHandler with `enrich_context` callback to enable efficient multi-step queries:
+1. **Initial Context**: Load primary events using facts and build initial context
+2. **Context Enrichment**: Use `enrich_context(db, context)` for targeted additional queries  
+3. **Command Execution**: Run business logic with enriched context
+
+This pattern enables complex cross-entity validation (like parent-child relationships) without loading excessive events.
+
 ## Task Breakdown
 
 - [x] Update `Fact` type in `facts.gleam` to include auto-generated `id` field using `erlang.unique_integer/0`
 - [x] Add a new_fact constructor function in facts.gleam to create a fact with auto-generated ID
 - [x] Implement SQL-level event tagging system (replaced individual JSON conversion with comprehensive tagging)
-  - [x] Add `tag: Option(String)` field to `FilterCondition` 
+  - [x] Add `tag: Option(String)` field to `FilterCondition`
   - [x] Update `event_filter.to_string()` to include `fact_id` field when tagged
   - [x] Add `event_filter.with_tag()` function to set tags on filters
   - [x] Auto-tag filters in `facts.new_fact()` with unique IDs
@@ -271,10 +280,15 @@ The system now uses SQL-level event tagging exclusively, providing perfect fact 
   - [x] Update `context_reducer` signature to accept `Dict(String, List(event))` for proper encapsulation
   - [x] All command handlers now use tagged event isolation automatically
 - [x] Add comprehensive integration tests to ensure handler behavior correct
-- [ ] **NEXT PHASE: Implement multi-ticket use cases that demonstrate business value**
-  - [ ] `MarkDuplicateCommand` - Cross-ticket relationship validation
-  - [ ] `CloseParentTicketCommand` - Parent-child ticket dependency validation  
-  - [ ] `BulkAssignCommand` - Multi-ticket batch operations
+- [x] **MarkDuplicateCommand** - Cross-ticket relationship validation ✅ COMPLETED
+- [x] **Parent-Child Ticket Relationships** - ✅ COMPLETED
+  - [x] Add `TicketParentLinked` event and optional `parent_ticket_id` to `OpenTicketCommand`
+  - [x] Implement `child_tickets` fact (renamed for accuracy)
+  - [x] Fix event filter JSON path syntax issue: `$ ? (true)` → `$ ? (1 == 1)`
+  - [x] Discover 2-step query pattern for efficient cross-entity relationships
+  - [x] Implement `enrich_context` pattern for multi-step queries in CommandHandler
+  - [x] Update close_ticket_handler to prevent closing parent with open children
+- [ ] **Future: `BulkAssignCommand`** - Multi-ticket batch operations
 
 ## Success Criteria
 
@@ -282,7 +296,9 @@ The system now uses SQL-level event tagging exclusively, providing perfect fact 
 - [x] No manual event filtering needed in `apply_events` functions
 - [x] All existing tests continue to pass
 - [x] Command handlers work with clean, encapsulated API
-- [ ] **Business Value Demonstrated**: Multi-ticket use cases working end-to-end
+- [x] **Business Value Demonstrated**: Multi-ticket use cases working end-to-end
+  - [x] MarkDuplicateCommand: Cross-ticket relationship validation
+  - [x] CloseTicket with parent-child validation: Prevents closing parents with open children
 
 ## Final Architecture State
 
@@ -318,41 +334,108 @@ pub fn build_context(facts: List(Fact(event, context))) {
 
 ### Command Handler Integration ✅ COMPLETED
 ```gleam
-// Clean, encapsulated API - no facts_list parameters needed
-pub fn execute(
-  db: pog.Connection,
-  handler: CommandHandler(command, event, context, error),
-  command: command,
-  retries_left: Int,
-) -> Result(CommandResult(event, error), String)
-
-// CommandHandler with updated context_reducer signature
+// CommandHandler with enrich_context for two-step queries
 pub type CommandHandler(command, event, context, error) {
   CommandHandler(
     event_filter: EventFilter,                                    // Combined from all facts
     context_reducer: fn(dict.Dict(String, List(event)), context) -> context,  // Routes by fact ID
     initial_context: context,
+    enrich_context: fn(pog.Connection, context) -> Result(context, String),   // Two-step queries
     command_logic: fn(command, context) -> Result(List(event), error),
     event_mapper: fn(String, Dynamic) -> Result(event, String),
     event_converter: fn(event) -> #(String, json.Json),
     metadata_generator: fn(command, context) -> dict.Dict(String, String),
   )
 }
+
+// Handler factory functions with data-flow parameter ordering
+make_handler(initial_context, facts, execute)
+make_handler_with_queries(initial_context, facts, enrich_context, execute)
 ```
 
-### Testing Status ✅ COMPLETED  
+### Testing Status ✅ COMPLETED
 - **19/19 tests passing** - Including full integration tests
 - **Tagged isolation verified** - SQL-level event routing works correctly
 - **Backward compatibility** - All existing handlers work with signature updates
 - **Clean encapsulation** - No leaky abstractions or external fact management
 
-## Next Phase: Business Value Implementation
+## Session Progress: Parent-Child Ticket Relationships
 
-The tagged event isolation system is complete and ready for the multi-ticket use cases that motivated this entire design:
+### ✅ Completed in This Session
+1. **MarkDuplicateCommand**: Fully implemented with comprehensive tests
+2. **Parent-Child Events**: Added `TicketParentLinked(ticket_id, parent_ticket_id)` event type
+3. **OpenTicketCommand Enhancement**: Added optional `parent_ticket_id` field
+4. **open_child_tickets Fact**: Tracks child tickets and filters out closed ones
+5. **Critical Bug Fix**: Discovered and fixed event filter JSON path issue
 
-### Ready to Implement
-1. **MarkDuplicateCommand** - Requires facts from both original and duplicate tickets
-2. **CloseParentTicketCommand** - Requires facts from parent + all child tickets  
-3. **BulkAssignCommand** - Requires facts from multiple tickets for validation
+### 🔧 Key Technical Discovery: Event Filter JSON Path Fix
 
-These will demonstrate the real business value of consistent cross-ticket snapshots and perfect fact isolation.
+**Problem**: `$ ? (true)` generates invalid PostgreSQL JSON path syntax error:
+```
+DatabaseError(PostgresqlError("42601", "syntax_error", "syntax error at or near \")\" of jsonpath input"))
+```
+
+**Root Cause**: `$ ? (true)` is not valid PostgreSQL JSON path syntax for always-true expressions
+
+**Solution**: Use `$ ? (1 == 1)` as the always-true JSON path expression in `event_filter.gleam`:
+```gleam
+// In combine_attribute_filters_to_condition for empty filters:
+FilterCondition(
+  event_type: event_type,
+  filter_expr: "$ ? (1 == 1)",  // Fixed from "$ ? (true)"
+  params: dict.new(),
+  tag: option.None,
+)
+```
+
+### 🎯 Architectural Pattern Discovery: Efficient Cross-Entity Queries
+
+**Problem**: Loading ALL `TicketClosed` events to filter child tickets is inefficient and doesn't scale.
+
+**Solution**: 2-Step Query Pattern with Custom Context Reducer
+```gleam
+// Step 1: Simple fact gets child ticket IDs
+child_tickets(parent_ticket_id, update_context)  // Only TicketParentLinked events
+
+// Step 2: Custom context_reducer orchestrates second query
+fn context_reducer(events_by_fact, initial_context) {
+  // Apply child_tickets fact to get child IDs
+  let context_with_children = apply_child_facts(events_by_fact, initial_context)
+
+  // Create is_closed facts for each specific child
+  let child_closed_facts = list.map(context_with_children.child_ids, fn(child_id) {
+    ticket_facts.is_closed(child_id, update_child_closed_status)
+  })
+
+  // Second database query for only these specific children
+  let assert Ok(child_statuses) = facts.query_event_log(db, child_closed_facts, ...)
+
+  // Optional: Consistency check by re-querying child_tickets fact
+  // build_final_context(context_with_children, child_statuses)
+}
+```
+
+**Benefits**:
+- ✅ **Efficient**: Only queries specific events needed, not entire event types
+- ✅ **Consistent**: Can implement optimistic concurrency control between queries
+- ✅ **Scalable**: Performance doesn't degrade with total number of closed tickets
+- ✅ **Reusable**: Pattern works for any cross-entity relationship
+
+### 🏗️ Architecture Achievements
+
+1. **Two-Step Query Pattern**: Implemented `enrich_context` callback for efficient multi-step queries
+2. **Parent-Child Validation**: CloseTicket handler prevents closing parent tickets with open children
+3. **Performance Optimization**: Eliminated loading ALL TicketClosed events, now queries only specific children
+4. **Clean API**: Parameter ordering matches data flow (initial_context → facts → enrich_context → execute)
+
+### 📊 Current Test Coverage
+- **19/19 core tests passing** - Tagged isolation system stable
+- **3/3 parent-child tests passing** - Basic relationship tracking works
+- **Edge cases handled**: Empty filters, cross-event type queries, JSON path syntax
+
+## Future: Bulk Operations
+
+With the 2-step query pattern established, `BulkAssignCommand` becomes straightforward:
+1. Query facts for all ticket IDs in the bulk operation
+2. Apply business rules validation
+3. Use consistency checks to ensure no concurrent modifications

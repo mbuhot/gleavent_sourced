@@ -191,8 +191,10 @@ pub fn query_events_with_tags(
                         })
                       Ok(updated_dict)
                     }
-                    Error(_) ->
+                    Error(e) -> {
+                      echo e
                       Error(MappingError("Failed to parse matching_facts JSON"))
+                    }
                   }
                 Error(msg) -> Error(MappingError(msg))
               }

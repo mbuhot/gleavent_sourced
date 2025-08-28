@@ -71,6 +71,8 @@ pub fn query_event_log(
       let final_context = context_builder(events_by_fact, initial_context)
       Ok(final_context)
     }
-    Error(_err) -> Error("Failed to load events from database")
+    Error(_err) -> {
+      Error("Failed to load events from database")
+    }
   }
 }
