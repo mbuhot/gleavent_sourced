@@ -39,6 +39,14 @@ pub type MarkDuplicateCommand {
   )
 }
 
+pub type BulkAssignCommand {
+  BulkAssignCommand(
+    ticket_ids: List(String),
+    assignee: String,
+    assigned_at: String,
+  )
+}
+
 // Error types for ticket operations
 pub type TicketError {
   ValidationError(message: String)
