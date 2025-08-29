@@ -6,7 +6,7 @@ import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type CloseTicketCommand, type TicketError, BusinessRuleViolation,
 }
-import gleavent_sourced/customer_support/ticket_events
+import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/customer_support/ticket_facts
 import gleavent_sourced/facts
 import gleavent_sourced/validation.{require, validate}
@@ -64,7 +64,7 @@ pub fn create_close_ticket_handler(
   command: CloseTicketCommand,
 ) -> CommandHandler(
   CloseTicketCommand,
-  ticket_events.TicketEvent,
+  Ticket Event,
   TicketCloseContext,
   TicketError,
 ) {
@@ -116,7 +116,7 @@ fn enrich_context(
 fn execute(
   command: CloseTicketCommand,
   context: TicketCloseContext,
-) -> Result(List(ticket_events.TicketEvent), TicketError) {
+) -> Result(List(TicketEvent), TicketError) {
   use _ <- validate(ticket_exists, context)
   use _ <- validate(ticket_not_already_closed, context)
   use _ <- validate(no_open_children, context)

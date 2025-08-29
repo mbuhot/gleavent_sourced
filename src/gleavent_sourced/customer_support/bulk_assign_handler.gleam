@@ -1,3 +1,4 @@
+import gleam/string
 import gleam/dict
 import gleam/list
 import gleam/option
@@ -117,14 +118,7 @@ fn all_tickets_exist(context: BulkAssignContext) -> Result(Nil, TicketError) {
   case non_existent_tickets {
     [] -> Ok(Nil)
     missing -> {
-      let missing_list =
-        list.fold(missing, "", fn(acc, ticket_id) {
-          case acc {
-            "" -> ticket_id
-            _ -> acc <> ", " <> ticket_id
-          }
-        })
-      Error(BusinessRuleViolation("Tickets do not exist: " <> missing_list))
+      Error(BusinessRuleViolation("Tickets do not exist: " <> string.join(missing, ", ")))
     }
   }
 }
@@ -145,15 +139,8 @@ fn no_tickets_closed(context: BulkAssignContext) -> Result(Nil, TicketError) {
   case closed_tickets {
     [] -> Ok(Nil)
     closed -> {
-      let closed_list =
-        list.fold(closed, "", fn(acc, ticket_id) {
-          case acc {
-            "" -> ticket_id
-            _ -> acc <> ", " <> ticket_id
-          }
-        })
       Error(BusinessRuleViolation(
-        "Cannot assign closed tickets: " <> closed_list,
+        "Cannot assign closed tickets: " <> string.join(closed, ", "),
       ))
     }
   }

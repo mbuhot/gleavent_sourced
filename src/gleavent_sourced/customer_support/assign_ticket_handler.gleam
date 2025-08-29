@@ -4,7 +4,7 @@ import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type AssignTicketCommand, type TicketError, BusinessRuleViolation,
 }
-import gleavent_sourced/customer_support/ticket_events
+import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/customer_support/ticket_facts
 import gleavent_sourced/validation.{require, validate}
 
@@ -48,7 +48,7 @@ pub fn create_assign_ticket_handler(
   command: AssignTicketCommand,
 ) -> CommandHandler(
   AssignTicketCommand,
-  ticket_events.TicketEvent,
+  TicketEvent,
   TicketAssignmentContext,
   TicketError,
 ) {
@@ -63,7 +63,7 @@ pub fn create_assign_ticket_handler(
 fn execute(
   command: AssignTicketCommand,
   context: TicketAssignmentContext,
-) -> Result(List(ticket_events.TicketEvent), TicketError) {
+) -> Result(List(TicketEvent), TicketError) {
   use _ <- validate(ticket_exists, context)
   use _ <- validate(ticket_not_closed, context)
   use _ <- validate(not_already_assigned, context)
