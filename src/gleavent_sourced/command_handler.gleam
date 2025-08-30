@@ -1,4 +1,3 @@
-import gleam/io
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/json

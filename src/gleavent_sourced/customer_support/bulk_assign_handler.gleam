@@ -1,7 +1,7 @@
-import gleam/string
 import gleam/dict
 import gleam/list
 import gleam/option
+import gleam/string
 import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type BulkAssignCommand, type TicketError, BusinessRuleViolation,
@@ -35,12 +35,12 @@ fn update_ticket(
   ticket_id: String,
   update_fn: fn(TicketState) -> TicketState,
 ) -> BulkAssignContext {
-    context.ticket_states
-    |> dict.upsert(ticket_id, fn (v) {
-      option.unwrap(v, TicketState(ticket_id, False, False, ""))
-      |> update_fn()
-    })
-    |> BulkAssignContext(ticket_states: _)
+  context.ticket_states
+  |> dict.upsert(ticket_id, fn(v) {
+    option.unwrap(v, TicketState(ticket_id, False, False, ""))
+    |> update_fn()
+  })
+  |> BulkAssignContext(ticket_states: _)
 }
 
 // Define facts needed to validate bulk assignment
@@ -118,7 +118,9 @@ fn all_tickets_exist(context: BulkAssignContext) -> Result(Nil, TicketError) {
   case non_existent_tickets {
     [] -> Ok(Nil)
     missing -> {
-      Error(BusinessRuleViolation("Tickets do not exist: " <> string.join(missing, ", ")))
+      Error(BusinessRuleViolation(
+        "Tickets do not exist: " <> string.join(missing, ", "),
+      ))
     }
   }
 }

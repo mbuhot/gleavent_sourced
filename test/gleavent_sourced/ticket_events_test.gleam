@@ -68,6 +68,7 @@ pub fn complete_ticket_lifecycle_test() {
       |> event_filter.for_type("TicketClosed", [
         event_filter.attr_string("ticket_id", "T-001"),
       ])
+      |> event_filter.with_tag("lifecycle_test")
 
     let assert Ok(#(events, _max_seq)) =
       event_log.query_events(db, ticket_filter, ticket_events.decode)
@@ -123,11 +124,13 @@ pub fn event_filtering_by_attributes_test() {
       )
 
     // Test filtering: find high priority tickets
+    // Test filtering by attributes
     let high_priority_filter =
       event_filter.new()
       |> event_filter.for_type("TicketOpened", [
         event_filter.attr_string("priority", "high"),
       ])
+      |> event_filter.with_tag("high_priority_test")
 
     let assert Ok(#(events, _max_seq)) =
       event_log.query_events(db, high_priority_filter, ticket_events.decode)
@@ -147,6 +150,7 @@ pub fn event_filtering_by_attributes_test() {
       |> event_filter.for_type("TicketAssigned", [
         event_filter.attr_string("ticket_id", "T-100"),
       ])
+      |> event_filter.with_tag("complex_test")
 
     let assert Ok(#(complex_events, _)) =
       event_log.query_events(db, complex_filter, ticket_events.decode)
@@ -161,6 +165,7 @@ pub fn event_filtering_by_attributes_test() {
         event_filter.attr_string("priority", "high"),
         event_filter.attr_string("ticket_id", "T-100"),
       ])
+      |> event_filter.with_tag("multi_attr_test")
 
     let assert Ok(#(multi_attr_events, _)) =
       event_log.query_events(db, multi_attr_filter, ticket_events.decode)
@@ -221,6 +226,7 @@ pub fn multiple_attribute_filters_behavior_test() {
         event_filter.attr_string("priority", "high"),
         event_filter.attr_string("ticket_id", "T-100"),
       ])
+      |> event_filter.with_tag("multi_attr_behavior_test")
 
     let assert Ok(#(filtered_events, _)) =
       event_log.query_events(db, multi_attr_filter, ticket_events.decode)
@@ -261,11 +267,13 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       )
 
     // Process A reads current state and gets sequence number from events
+    // Query to get current state before Process B appends
     let initial_filter =
       event_filter.new()
       |> event_filter.for_type("TicketOpened", [
         event_filter.attr_string("ticket_id", "T-200"),
       ])
+      |> event_filter.with_tag("initial_state")
 
     let assert Ok(#(initial_events, process_a_last_seen)) =
       event_log.query_events(db, initial_filter, ticket_events.decode)
@@ -321,6 +329,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
     let assert Ok(event_log.AppendConflict(conflict_count: 1)) = result
 
     // Verify Process A's event was NOT applied using high-level query
+    // Query final events to verify both processes' events were stored
     let final_filter =
       event_filter.new()
       |> event_filter.for_type("TicketOpened", [
@@ -332,6 +341,7 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       |> event_filter.for_type("TicketClosed", [
         event_filter.attr_string("ticket_id", "T-200"),
       ])
+      |> event_filter.with_tag("final_state")
 
     let assert Ok(#(final_events, _)) =
       event_log.query_events(db, final_filter, ticket_events.decode)

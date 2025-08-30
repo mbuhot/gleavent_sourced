@@ -64,7 +64,7 @@ pub fn create_close_ticket_handler(
   command: CloseTicketCommand,
 ) -> CommandHandler(
   CloseTicketCommand,
-  Ticket Event,
+  TicketEvent,
   TicketCloseContext,
   TicketError,
 ) {

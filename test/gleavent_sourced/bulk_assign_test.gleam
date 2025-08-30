@@ -182,7 +182,12 @@ pub fn bulk_assign_with_closed_tickets_rejected_test() {
         closed_at: "2024-01-01T09:00:00Z",
       )
 
-    let initial_events = [ticket1_opened, ticket2_opened, ticket3_opened, ticket2_closed]
+    let initial_events = [
+      ticket1_opened,
+      ticket2_opened,
+      ticket3_opened,
+      ticket2_closed,
+    ]
     let test_metadata = create_test_metadata()
 
     // Store initial ticket events
