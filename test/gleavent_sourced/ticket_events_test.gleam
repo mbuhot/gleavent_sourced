@@ -70,8 +70,10 @@ pub fn complete_ticket_lifecycle_test() {
       ])
       |> event_filter.with_tag("lifecycle_test")
 
-    let assert Ok(#(events, _max_seq)) =
-      event_log.query_events(db, ticket_filter, ticket_events.decode)
+    let assert Ok(#(events_dict, _max_seq)) =
+      event_log.query_events_with_tags(db, ticket_filter, ticket_events.decode)
+
+    let assert Ok(events) = dict.get(events_dict, "lifecycle_test")
 
     // Verify complete lifecycle: all 3 events stored and retrieved correctly
     let assert 3 = list.length(events)
@@ -132,8 +134,14 @@ pub fn event_filtering_by_attributes_test() {
       ])
       |> event_filter.with_tag("high_priority_test")
 
-    let assert Ok(#(events, _max_seq)) =
-      event_log.query_events(db, high_priority_filter, ticket_events.decode)
+    let assert Ok(#(events_dict, _max_seq)) =
+      event_log.query_events_with_tags(
+        db,
+        high_priority_filter,
+        ticket_events.decode,
+      )
+
+    let assert Ok(events) = dict.get(events_dict, "high_priority_test")
 
     // Should find only the high priority ticket
     let assert 1 = list.length(events)
@@ -152,8 +160,10 @@ pub fn event_filtering_by_attributes_test() {
       ])
       |> event_filter.with_tag("complex_test")
 
-    let assert Ok(#(complex_events, _)) =
-      event_log.query_events(db, complex_filter, ticket_events.decode)
+    let assert Ok(#(events_dict, _)) =
+      event_log.query_events_with_tags(db, complex_filter, ticket_events.decode)
+
+    let assert Ok(complex_events) = dict.get(events_dict, "complex_test")
 
     // Should find both the high priority ticket and the assignment
     let assert 2 = list.length(complex_events)
@@ -167,8 +177,14 @@ pub fn event_filtering_by_attributes_test() {
       ])
       |> event_filter.with_tag("multi_attr_test")
 
-    let assert Ok(#(multi_attr_events, _)) =
-      event_log.query_events(db, multi_attr_filter, ticket_events.decode)
+    let assert Ok(#(events_dict, _)) =
+      event_log.query_events_with_tags(
+        db,
+        multi_attr_filter,
+        ticket_events.decode,
+      )
+
+    let assert Ok(multi_attr_events) = dict.get(events_dict, "multi_attr_test")
 
     // Should find only the T-100 high priority ticket (both conditions must match)
     let assert 1 = list.length(multi_attr_events)
@@ -228,15 +244,17 @@ pub fn multiple_attribute_filters_behavior_test() {
       ])
       |> event_filter.with_tag("multi_attr_behavior_test")
 
-    let assert Ok(#(filtered_events, _)) =
-      event_log.query_events(db, multi_attr_filter, ticket_events.decode)
+    let assert Ok(#(events_dict, _)) =
+      event_log.query_events_with_tags(
+        db,
+        multi_attr_filter,
+        ticket_events.decode,
+      )
 
-    // Current implementation: Should return 3 events (OR behavior)
-    // Expected for AND: Should return 1 event (only ticket_high_t100)
-    // Let's see what we actually get
+    let assert Ok(filtered_events) =
+      dict.get(events_dict, "multi_attr_behavior_test")
+
     let event_count = list.length(filtered_events)
-
-    // With AND behavior: should get 1 event (only high_t100 matches both conditions)
     let assert 1 = event_count
   })
 }
@@ -275,8 +293,10 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       ])
       |> event_filter.with_tag("initial_state")
 
-    let assert Ok(#(initial_events, process_a_last_seen)) =
-      event_log.query_events(db, initial_filter, ticket_events.decode)
+    let assert Ok(#(events_dict, process_a_last_seen)) =
+      event_log.query_events_with_tags(db, initial_filter, ticket_events.decode)
+
+    let assert Ok(initial_events) = dict.get(events_dict, "initial_state")
 
     let assert 1 = list.length(initial_events)
 
@@ -343,8 +363,10 @@ pub fn optimistic_concurrency_control_prevents_conflicts_test() {
       ])
       |> event_filter.with_tag("final_state")
 
-    let assert Ok(#(final_events, _)) =
-      event_log.query_events(db, final_filter, ticket_events.decode)
+    let assert Ok(#(final_events_dict, _)) =
+      event_log.query_events_with_tags(db, final_filter, ticket_events.decode)
+
+    let assert Ok(final_events) = dict.get(final_events_dict, "final_state")
 
     // Should have only 2 events: initial + Process B's assignment
     assert list.length(final_events) == 2

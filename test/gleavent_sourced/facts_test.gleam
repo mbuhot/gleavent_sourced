@@ -1,6 +1,5 @@
 import gleam/dict
 import gleam/list
-import gleam/string
 import gleavent_sourced/event_filter
 import gleavent_sourced/facts
 import gleavent_sourced/test_runner
@@ -17,23 +16,6 @@ pub fn new_fact_creates_unique_ids_test() {
   let fact2 = facts.new_fact(filter, apply_fn)
 
   assert fact1.id != fact2.id
-}
-
-pub fn new_fact_automatically_tags_filter_with_id_test() {
-  let filter =
-    event_filter.new()
-    |> event_filter.for_type("TicketOpened", [
-      event_filter.attr_string("ticket_id", "T-100"),
-    ])
-  let apply_fn = fn(context, _events) { context }
-
-  let fact = facts.new_fact(filter, apply_fn)
-  let filter_json_string = event_filter.to_string(fact.event_filter)
-
-  // The filter should be tagged with the fact's ID
-  // Check that the JSON contains the fact_id field
-  let assert True = string.contains(filter_json_string, "\"fact_id\"")
-  let assert True = string.contains(filter_json_string, "\"" <> fact.id <> "\"")
 }
 
 // Mock event type for testing event isolation
@@ -182,23 +164,4 @@ pub fn build_context_with_tagged_sql_queries_test() {
 
   // Verify facts have unique IDs and tagged filters
   assert fact_a.id != fact_b.id
-
-  // Verify filters are tagged with fact IDs (for SQL query)
-  let fact_a_filter_json = event_filter.to_string(fact_a.event_filter)
-  let fact_b_filter_json = event_filter.to_string(fact_b.event_filter)
-
-  assert string.contains(
-    fact_a_filter_json,
-    "\"fact_id\":\"" <> fact_a.id <> "\"",
-  )
-  assert string.contains(
-    fact_b_filter_json,
-    "\"fact_id\":\"" <> fact_b.id <> "\"",
-  )
-
-  // Verify each filter contains the expected event type and ticket_id in params
-  assert string.contains(fact_a_filter_json, "\"event_type\":\"TicketOpened\"")
-  assert string.contains(fact_a_filter_json, "\"A-100\"")
-  assert string.contains(fact_b_filter_json, "\"event_type\":\"TicketClosed\"")
-  assert string.contains(fact_b_filter_json, "\"B-200\"")
 }

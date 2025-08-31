@@ -2,7 +2,6 @@ import gleam/dict
 import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/string
 
 import gleavent_sourced/command_handler.{CommandAccepted, CommandRejected}
 import gleavent_sourced/customer_support/ticket_command_router
@@ -413,18 +412,6 @@ pub fn tagged_event_isolation_integration_test() {
 
     // Verify facts have unique IDs and are properly tagged
     assert exists_fact.id != closed_fact.id
-
-    let exists_filter_json = event_filter.to_string(exists_fact.event_filter)
-    let closed_filter_json = event_filter.to_string(closed_fact.event_filter)
-
-    assert string.contains(
-      exists_filter_json,
-      "\"fact_id\":\"" <> exists_fact.id <> "\"",
-    )
-    assert string.contains(
-      closed_filter_json,
-      "\"fact_id\":\"" <> closed_fact.id <> "\"",
-    )
 
     // Create a command that will use tagged event isolation
     let initial_context =

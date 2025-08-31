@@ -1,15 +1,16 @@
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
+import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
 
 import gleam/erlang/process
+import gleam/time/timestamp.{type Timestamp}
 import gleavent_sourced/event_filter.{type EventFilter}
-import gleavent_sourced/parrot_pog
-import gleavent_sourced/sql
 import pog
 
 /// Custom error type for query operations that can fail at database or mapping level
@@ -24,7 +25,7 @@ pub type QueryError {
 pub type Event {
   Event(
     sequence_number: Int,
-    occurred_at: String,
+    occurred_at: Timestamp,
     event_type: String,
     payload: dynamic.Dynamic,
     metadata: dict.Dict(String, String),
@@ -68,96 +69,48 @@ pub fn append_events(
     })
     |> json.to_string
 
-  // Convert conflict filter to JSON string
-  let conflict_filter_json = event_filter.to_string(conflict_filter)
-
-  // Execute batch insert with conflict check
-  let #(batch_sql, batch_params, batch_decoder) =
-    sql.batch_insert_events_with_conflict_check(
-      conflict_filter: conflict_filter_json,
-      last_seen_sequence: last_seen_sequence,
-      events: events_json_array,
+  // Generate dynamic SQL with conflict checking
+  let sql_and_params =
+    build_dynamic_insert_sql(
+      conflict_filter.filters,
+      last_seen_sequence,
+      events_json_array,
     )
 
   let batch_query =
-    pog.query(batch_sql)
-    |> parrot_pog.parameters(batch_params)
-    |> pog.returning(batch_decoder)
+    pog.query(sql_and_params.sql)
+    |> list.fold(sql_and_params.params, _, fn(query, param) {
+      pog.parameter(query, param)
+    })
+    |> pog.returning(append_result_decoder())
 
   pog.execute(batch_query, on: db)
   |> result.map(fn(returned) {
     let assert [row] = returned.rows
-    case row.status {
+    let #(status, conflict_count) = row
+    case status {
       "success" -> AppendSuccess
-      "conflict" -> AppendConflict(conflict_count: row.conflict_count)
+      "conflict" -> AppendConflict(conflict_count: conflict_count)
       _ -> panic as "unexpected status from batch insert"
     }
   })
 }
 
-/// Query events using EventFilter with typed result mapping
-pub fn query_events(
-  db: pog.Connection,
-  filter: EventFilter,
-  event_mapper: fn(String, Dynamic) -> Result(event_type, String),
-) -> Result(#(List(event_type), Int), QueryError) {
-  let filters_json = event_filter.to_string(filter)
-
-  let #(select_sql, select_params, _decoder) =
-    sql.read_events_with_filter(filters: filters_json)
-
-  let select_query =
-    pog.query(select_sql)
-    |> parrot_pog.parameters(select_params)
-    |> pog.returning(sql.read_events_with_filter_decoder())
-
-  case pog.execute(select_query, on: db) {
-    Ok(returned) -> {
-      let raw_rows = returned.rows
-
-      // Get max sequence number (all rows have the same value)
-      let max_sequence = case raw_rows {
-        [] -> 0
-        [first, ..] -> first.current_max_sequence
-      }
-
-      // Map events using the provided mapper
-      let mapped_events =
-        list.try_map(raw_rows, fn(row) {
-          case json.parse(row.payload, decode.dynamic) {
-            Ok(payload_dynamic) ->
-              case event_mapper(row.event_type, payload_dynamic) {
-                Ok(event) -> Ok(event)
-                Error(msg) -> Error(MappingError(msg))
-              }
-            Error(err) -> Error(JsonParseError(err))
-          }
-        })
-
-      case mapped_events {
-        Ok(events) -> Ok(#(events, max_sequence))
-        Error(err) -> Error(err)
-      }
-    }
-    Error(err) -> Error(DatabaseError(err))
-  }
-}
-
-/// Query events with SQL-level fact tagging and return events grouped by fact ID
+/// Query events with dynamic SQL generation for fact tagging
+/// Returns events grouped by fact ID
 pub fn query_events_with_tags(
   db: pog.Connection,
   filter: EventFilter,
   event_mapper: fn(String, Dynamic) -> Result(event_type, String),
 ) -> Result(#(dict.Dict(String, List(event_type)), Int), QueryError) {
-  let filters_json = event_filter.to_string(filter)
-
-  let #(select_sql, select_params, decoder) =
-    sql.read_events_with_fact_tags(filters: filters_json)
-
+  // Generate dynamic SQL based on filter conditions
+  let sql_and_params = build_dynamic_query_sql(filter.filters)
   let select_query =
-    pog.query(select_sql)
-    |> parrot_pog.parameters(select_params)
-    |> pog.returning(decoder)
+    pog.query(sql_and_params.sql)
+    |> list.fold(sql_and_params.params, _, fn(query, param) {
+      pog.parameter(query, param)
+    })
+    |> pog.returning(dynamic_query_decoder())
 
   case pog.execute(select_query, on: db) {
     Ok(returned) -> {
@@ -166,54 +119,268 @@ pub fn query_events_with_tags(
       // Get max sequence number (all rows have the same value)
       let max_sequence = case raw_rows {
         [] -> 0
-        [first, ..] -> first.current_max_sequence
+        [first, ..] -> first.max_sequence_number
       }
 
-      // Group events by fact ID using matching_facts JSON
-      let events_by_fact_result =
-        list.try_fold(raw_rows, dict.new(), fn(acc, row) {
-          case json.parse(row.payload, decode.dynamic) {
-            Ok(payload_dynamic) ->
-              case event_mapper(row.event_type, payload_dynamic) {
-                Ok(event) ->
-                  case
-                    json.parse(row.matching_facts, decode.list(decode.string))
-                  {
-                    Ok(fact_ids) -> {
-                      let updated_dict =
-                        list.fold(fact_ids, acc, fn(dict_acc, fact_id) {
-                          dict.upsert(dict_acc, fact_id, fn(existing_events) {
-                            case existing_events {
-                              Some(events) -> [event, ..events]
-                              None -> [event]
-                            }
-                          })
-                        })
-                      Ok(updated_dict)
-                    }
-                    Error(e) -> {
-                      echo e
-                      Error(MappingError("Failed to parse matching_facts JSON"))
-                    }
-                  }
-                Error(msg) -> Error(MappingError(msg))
-              }
-            Error(err) -> Error(JsonParseError(err))
-          }
-        })
-
-      case events_by_fact_result {
-        Ok(events_by_fact) -> {
-          // Reverse event lists to maintain chronological order
-          let ordered_events_by_fact =
-            dict.map_values(events_by_fact, fn(_, events) {
-              list.reverse(events)
-            })
-          Ok(#(ordered_events_by_fact, max_sequence))
+      // Group events by fact ID and map them
+      list.try_map(raw_rows, fn(row) {
+        case json.parse(row.payload, decode.dynamic) {
+          Ok(payload_dynamic) ->
+            case event_mapper(row.event_type, payload_dynamic) {
+              Ok(event) -> Ok(#(row.fact_id, event))
+              Error(msg) -> Error(MappingError(msg))
+            }
+          Error(err) -> Error(JsonParseError(err))
         }
-        Error(err) -> Error(err)
-      }
+      })
+      |> result.map(fn(events) {
+        list.group(events, fn(pr) { pr.0 })
+        |> dict.map_values(fn(_k, pairs) { list.map(pairs, fn(pr) { pr.1 }) })
+      })
+      |> result.map(fn(events_dict) { #(events_dict, max_sequence) })
     }
     Error(err) -> Error(DatabaseError(err))
   }
+}
+
+/// Result type for dynamic query results
+type DynamicQueryResult {
+  DynamicQueryResult(
+    fact_id: String,
+    sequence_number: Int,
+    event_type: String,
+    payload: String,
+    metadata: String,
+    max_sequence_number: Int,
+  )
+}
+
+/// Helper type for dynamic SQL generation
+type SqlAndParams {
+  SqlAndParams(sql: String, params: List(pog.Value))
+}
+
+/// Build a single CTE for a filter condition
+fn build_condition_cte(
+  condition: event_filter.FilterCondition,
+  index: Int,
+  param_offset: Int,
+  select_clause: String,
+  extra_where: String,
+) -> SqlAndParams {
+  let cte_name = "condition" <> int.to_string(index) <> "_events"
+  let param_index_event_type = index * 2 + param_offset + 1
+  let param_index_payload = index * 2 + param_offset + 2
+
+  let cte =
+    cte_name
+    <> " AS ("
+    <> "  SELECT "
+    <> select_clause
+    <> "  FROM events e"
+    <> "  WHERE e.event_type = $"
+    <> int.to_string(param_index_event_type)
+    <> "    AND e.payload @> $"
+    <> int.to_string(param_index_payload)
+    <> "::jsonb"
+    <> extra_where
+    <> ")"
+
+  let params = [
+    pog.text(condition.event_type),
+    pog.text(json.to_string(condition.filter_expr)),
+  ]
+
+  SqlAndParams(sql: cte, params: params)
+}
+
+/// Build all CTEs from conditions
+fn build_condition_ctes(
+  conditions: List(event_filter.FilterCondition),
+  param_offset: Int,
+  select_clause: String,
+  extra_where: String,
+) -> #(List(String), List(pog.Value)) {
+  let indexed_conditions =
+    list.index_map(conditions, fn(condition, index) { #(condition, index) })
+
+  let results =
+    list.map(indexed_conditions, fn(pair) {
+      let #(condition, index) = pair
+      build_condition_cte(
+        condition,
+        index,
+        param_offset,
+        select_clause,
+        extra_where,
+      )
+    })
+
+  let ctes = list.map(results, fn(result) { result.sql })
+  let params = list.flatten(list.map(results, fn(result) { result.params }))
+  #(ctes, params)
+}
+
+/// Build UNION clause from condition indices
+fn build_union_clause(condition_count: Int) -> String {
+  let cte_names =
+    list.range(0, condition_count - 1)
+    |> list.map(fn(index) { "condition" <> int.to_string(index) <> "_events" })
+
+  case cte_names {
+    [] -> ""
+    [single] -> single
+    multiple -> string.join(multiple, " UNION SELECT * FROM ")
+  }
+}
+
+/// Build dynamic SQL query with CTEs for each filter condition
+fn build_dynamic_query_sql(
+  conditions: List(event_filter.FilterCondition),
+) -> SqlAndParams {
+  case conditions {
+    [] ->
+      SqlAndParams(
+        sql: "SELECT NULL as fact_id, sequence_number, event_type, payload, metadata, 0 as max_sequence_number FROM events WHERE false",
+        params: []
+      )
+    _ -> {
+      // Build CTEs with fact_id selection
+      let #(ctes, params) = {
+        let indexed_conditions =
+          list.index_map(conditions, fn(condition, index) {
+            #(condition, index)
+          })
+        let results =
+          list.map(indexed_conditions, fn(pair) {
+            let #(condition, index) = pair
+            let fact_id = case condition.tag {
+              Some(tag) -> "'" <> tag <> "'"
+              None -> "'" <> condition.event_type <> "'"
+            }
+            let select_clause = fact_id <> " as fact_id, e.sequence_number, e.event_type, e.payload, e.metadata"
+            build_condition_cte(condition, index, 0, select_clause, "")
+          })
+
+        let ctes = list.map(results, fn(result) { result.sql })
+        let params =
+          list.flatten(list.map(results, fn(result) { result.params }))
+        #(ctes, params)
+      }
+
+      let union_clause =
+        "all_events AS ("
+        <> "  SELECT * FROM "
+        <> build_union_clause(list.length(conditions))
+        <> ")"
+
+      let final_sql =
+        "WITH "
+        <> string.join(ctes, ", ")
+        <> ", "
+        <> union_clause
+        <> " SELECT e.fact_id, e.sequence_number, e.event_type, e.payload, e.metadata,"
+        <> " MAX(e.sequence_number) OVER () as max_sequence_number"
+        <> " FROM all_events e"
+        <> " ORDER BY e.sequence_number"
+
+      SqlAndParams(sql: final_sql, params: params)
+    }
+  }
+}
+
+/// Build dynamic SQL INSERT with conflict checking
+fn build_dynamic_insert_sql(
+  conditions: List(event_filter.FilterCondition),
+  last_seen_sequence: Int,
+  events_json_array: String,
+) -> SqlAndParams {
+  case conditions {
+    [] ->
+      // No conflict conditions, just insert directly
+      SqlAndParams(
+        sql: "WITH new_events_parsed AS (
+          SELECT
+            event_data ->> 'type' as event_type,
+            event_data -> 'data' as event_data,
+            event_data -> 'metadata' as metadata
+          FROM jsonb_array_elements($1) AS event_data
+        ),
+        insert_result AS (
+          INSERT INTO events (event_type, payload, metadata)
+          SELECT event_type, event_data, metadata
+          FROM new_events_parsed
+          RETURNING sequence_number
+        )
+        SELECT 'success' as status, 0 as conflict_count
+        FROM (SELECT 1) dummy
+        WHERE EXISTS(SELECT 1 FROM insert_result)",
+        params: [pog.text(events_json_array)],
+      )
+    _ -> {
+      // Build CTEs for conflict checking
+      let extra_where =
+        "    AND e.sequence_number > " <> int.to_string(last_seen_sequence)
+      let #(ctes, conflict_params) =
+        build_condition_ctes(conditions, 1, "e.sequence_number", extra_where)
+
+      let conflict_union = build_union_clause(list.length(conditions))
+
+      let final_sql =
+        "WITH "
+        <> string.join(ctes, ", ")
+        <> ", conflict_check (conflict_count) AS ("
+        <> "  SELECT COUNT(*) FROM ("
+        <> "    SELECT sequence_number FROM "
+        <> conflict_union
+        <> "  ) conflicts"
+        <> "), new_events_parsed AS ("
+        <> "  SELECT"
+        <> "    event_data ->> 'type' as event_type,"
+        <> "    event_data -> 'data' as event_data,"
+        <> "    event_data -> 'metadata' as metadata"
+        <> "  FROM jsonb_array_elements($1) AS event_data"
+        <> "), insert_result AS ("
+        <> "  INSERT INTO events (event_type, payload, metadata)"
+        <> "  SELECT event_type, event_data, metadata"
+        <> "  FROM new_events_parsed"
+        <> "  WHERE (SELECT conflict_count FROM conflict_check) = 0"
+        <> "  RETURNING sequence_number"
+        <> ")"
+        <> "SELECT"
+        <> "  CASE"
+        <> "    WHEN EXISTS(SELECT 1 FROM insert_result) THEN 'success'"
+        <> "    ELSE 'conflict'"
+        <> "  END as status,"
+        <> "  (SELECT conflict_count FROM conflict_check) as conflict_count"
+
+      let all_params = [pog.text(events_json_array), ..conflict_params]
+      SqlAndParams(sql: final_sql, params: all_params)
+    }
+  }
+}
+
+/// Decoder for append results
+fn append_result_decoder() -> decode.Decoder(#(String, Int)) {
+  use status <- decode.field(0, decode.string)
+  use conflict_count <- decode.field(1, decode.int)
+  decode.success(#(status, conflict_count))
+}
+
+/// Decoder for dynamic query results
+fn dynamic_query_decoder() -> decode.Decoder(DynamicQueryResult) {
+  use fact_id <- decode.field(0, decode.string)
+  use sequence_number <- decode.field(1, decode.int)
+  use event_type <- decode.field(2, decode.string)
+  use payload <- decode.field(3, decode.string)
+  use metadata <- decode.field(4, decode.string)
+  use max_sequence_number <- decode.field(5, decode.int)
+  decode.success(DynamicQueryResult(
+    fact_id:,
+    sequence_number:,
+    event_type:,
+    payload:,
+    metadata:,
+    max_sequence_number:,
+  ))
 }
