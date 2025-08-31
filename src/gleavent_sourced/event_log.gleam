@@ -160,72 +160,85 @@ type SqlAndParams {
   SqlAndParams(sql: String, params: List(pog.Value))
 }
 
-/// Build a single CTE for a filter condition
-fn build_condition_cte(
-  condition: event_filter.FilterCondition,
-  index: Int,
-  param_offset: Int,
+
+
+/// Group FilterConditions by their tag
+fn group_conditions_by_tag(conditions: List(event_filter.FilterCondition)) -> List(#(String, List(event_filter.FilterCondition))) {
+  let indexed_conditions = list.index_map(conditions, fn(condition, index) {
+    let tag = case condition.tag {
+      Some(tag) -> tag
+      None -> "condition" <> int.to_string(index)
+    }
+    #(tag, condition)
+  })
+
+  list.group(indexed_conditions, by: fn(pair) { pair.0 })
+  |> dict.to_list()
+  |> list.map(fn(group) {
+    let #(tag, pairs) = group
+    let conditions = list.map(pairs, fn(pair) { pair.1 })
+    #(tag, conditions)
+  })
+}
+
+/// Build a single CTE for a group of conditions with the same tag (using OR)
+fn build_tag_group_cte(
+  tag: String,
+  conditions: List(event_filter.FilterCondition),
+  start_param_index: Int,
   select_clause: String,
   extra_where: String,
 ) -> SqlAndParams {
-  let cte_name = "condition" <> int.to_string(index) <> "_events"
-  let param_index_event_type = index * 2 + param_offset + 1
-  let param_index_payload = index * 2 + param_offset + 2
+  let cte_name = case tag {
+    "" -> "untagged_events"
+    _ -> "tag_" <> string.replace(tag, "-", "_") <> "_events"
+  }
 
-  let cte =
-    cte_name
-    <> " AS ("
-    <> "  SELECT "
-    <> select_clause
-    <> "  FROM events e"
-    <> "  WHERE e.event_type = $"
-    <> int.to_string(param_index_event_type)
-    <> "    AND e.payload @> $"
-    <> int.to_string(param_index_payload)
-    <> "::jsonb"
-    <> extra_where
-    <> ")"
+  let indexed_conditions = list.index_map(conditions, fn(condition, index) { #(condition, index) })
 
-  let params = [
-    pog.text(condition.event_type),
-    pog.text(json.to_string(condition.filter_expr)),
-  ]
+  let or_clauses = list.map(indexed_conditions, fn(pair) {
+    let #(_condition, index) = pair
+    let param_index_event_type = start_param_index + index * 2 + 1
+    let param_index_payload = start_param_index + index * 2 + 2
+
+    "(" <>
+    "e.event_type = $" <> int.to_string(param_index_event_type) <>
+    " AND e.payload @> $" <> int.to_string(param_index_payload) <> "::jsonb" <>
+    ")"
+  })
+
+  let where_clause = case or_clauses {
+    [] -> "WHERE false"
+    [single] -> "WHERE " <> single
+    multiple -> "WHERE (" <> string.join(multiple, " OR ") <> ")"
+  }
+
+  let cte = cte_name <> " AS (" <>
+    "  SELECT " <> select_clause <>
+    "  FROM events e" <>
+    "  " <> where_clause <>
+    extra_where <>
+    ")"
+
+  let params = list.flatten(list.map(conditions, fn(condition) {
+    [
+      pog.text(condition.event_type),
+      pog.text(json.to_string(condition.filter_expr))
+    ]
+  }))
 
   SqlAndParams(sql: cte, params: params)
 }
 
-/// Build all CTEs from conditions
-fn build_condition_ctes(
-  conditions: List(event_filter.FilterCondition),
-  param_offset: Int,
-  select_clause: String,
-  extra_where: String,
-) -> #(List(String), List(pog.Value)) {
-  let indexed_conditions =
-    list.index_map(conditions, fn(condition, index) { #(condition, index) })
-
-  let results =
-    list.map(indexed_conditions, fn(pair) {
-      let #(condition, index) = pair
-      build_condition_cte(
-        condition,
-        index,
-        param_offset,
-        select_clause,
-        extra_where,
-      )
-    })
-
-  let ctes = list.map(results, fn(result) { result.sql })
-  let params = list.flatten(list.map(results, fn(result) { result.params }))
-  #(ctes, params)
-}
-
-/// Build UNION clause from condition indices
-fn build_union_clause(condition_count: Int) -> String {
-  let cte_names =
-    list.range(0, condition_count - 1)
-    |> list.map(fn(index) { "condition" <> int.to_string(index) <> "_events" })
+/// Build UNION clause from tag groups
+fn build_union_clause(tag_groups: List(#(String, List(event_filter.FilterCondition)))) -> String {
+  let cte_names = list.map(tag_groups, fn(group) {
+    let #(tag, _) = group
+    case tag {
+      "" -> "untagged_events"
+      _ -> "tag_" <> string.replace(tag, "-", "_") <> "_events"
+    }
+  })
 
   case cte_names {
     [] -> ""
@@ -245,33 +258,27 @@ fn build_dynamic_query_sql(
         params: []
       )
     _ -> {
-      // Build CTEs with fact_id selection
-      let #(ctes, params) = {
-        let indexed_conditions =
-          list.index_map(conditions, fn(condition, index) {
-            #(condition, index)
-          })
-        let results =
-          list.map(indexed_conditions, fn(pair) {
-            let #(condition, index) = pair
-            let fact_id = case condition.tag {
-              Some(tag) -> "'" <> tag <> "'"
-              None -> "'" <> condition.event_type <> "'"
-            }
-            let select_clause = fact_id <> " as fact_id, e.sequence_number, e.event_type, e.payload, e.metadata"
-            build_condition_cte(condition, index, 0, select_clause, "")
-          })
+      // Group conditions by tag and build CTEs with correct parameter indexing
+      let tag_groups = group_conditions_by_tag(conditions)
 
-        let ctes = list.map(results, fn(result) { result.sql })
-        let params =
-          list.flatten(list.map(results, fn(result) { result.params }))
-        #(ctes, params)
-      }
+      let #(results, _) = list.fold(tag_groups, #([], 0), fn(acc, group) {
+        let #(results_acc, param_index) = acc
+        let #(tag, group_conditions) = group
+        let fact_id = "'" <> tag <> "'"
+        let select_clause = fact_id <> " as fact_id, e.sequence_number, e.event_type, e.payload, e.metadata"
+        let result = build_tag_group_cte(tag, group_conditions, param_index, select_clause, "")
+        let next_param_index = param_index + list.length(group_conditions) * 2
+        #([result, ..results_acc], next_param_index)
+      })
+
+      let results = list.reverse(results)
+      let ctes = list.map(results, fn(result) { result.sql })
+      let params = list.flatten(list.map(results, fn(result) { result.params }))
 
       let union_clause =
         "all_events AS ("
         <> "  SELECT * FROM "
-        <> build_union_clause(list.length(conditions))
+        <> build_union_clause(tag_groups)
         <> ")"
 
       let final_sql =
@@ -321,10 +328,20 @@ fn build_dynamic_insert_sql(
       // Build CTEs for conflict checking
       let extra_where =
         "    AND e.sequence_number > " <> int.to_string(last_seen_sequence)
-      let #(ctes, conflict_params) =
-        build_condition_ctes(conditions, 1, "e.sequence_number", extra_where)
+      let tag_groups = group_conditions_by_tag(conditions)
 
-      let conflict_union = build_union_clause(list.length(conditions))
+      let #(results, _) = list.fold(tag_groups, #([], 1), fn(acc, group) {
+        let #(results_acc, param_index) = acc
+        let #(tag, group_conditions) = group
+        let result = build_tag_group_cte(tag, group_conditions, param_index, "e.sequence_number", extra_where)
+        let next_param_index = param_index + list.length(group_conditions) * 2
+        #([result, ..results_acc], next_param_index)
+      })
+
+      let results = list.reverse(results)
+      let ctes = list.map(results, fn(result) { result.sql })
+      let conflict_params = list.flatten(list.map(results, fn(result) { result.params }))
+      let conflict_union = build_union_clause(tag_groups)
 
       let final_sql =
         "WITH "
