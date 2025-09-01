@@ -82,7 +82,20 @@ SELECT
   jsonb_build_object('source', 'benchmark_test', 'batch', '3')
 FROM generate_series(1, 2000) as i;
 
+-- Insert parent-child ticket relationships for join testing
+INSERT INTO events (event_type, payload, metadata)
+SELECT
+  'TicketParentLinked',
+  jsonb_build_object(
+    'ticket_id', 'T-' || (i * 2),      -- Child ticket ID
+    'parent_ticket_id', 'T-' || i      -- Parent ticket ID
+  ),
+  jsonb_build_object('source', 'benchmark_test', 'batch', '4')
+FROM generate_series(1, 500) as i     -- Creates 500 parent-child relationships
+WHERE i * 2 <= 5000;                   -- Ensure child tickets exist
+
 \echo 'Data population complete!'
+\echo 'Added parent-child ticket relationships for join testing'
 \echo ''
 EOF
 

@@ -7,7 +7,7 @@ import gleavent_sourced/event_log
 import gleavent_sourced/test_runner
 
 pub fn main() {
-  test_runner.run_eunit(["gleavent_sourced/event_log_optimized_test"])
+  test_runner.run_eunit(["gleavent_sourced/event_log_test"])
 }
 
 pub fn create_test_metadata() -> dict.Dict(String, String) {
