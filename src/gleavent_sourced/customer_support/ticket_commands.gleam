@@ -66,6 +66,17 @@ pub fn handler(initial_context, execute) {
   )
 }
 
+pub fn with_event_filter(
+  handler: command_handler.CommandHandler(command, event, context, error),
+  event_filter: event_filter.EventFilter,
+) -> command_handler.CommandHandler(command, event, context, error) {
+  CommandHandler(..handler, event_filter:)
+}
+
+pub fn with_reducer(handler, context_reducer) {
+  CommandHandler(..handler, context_reducer:)
+}
+
 pub fn with_facts(
   handler: command_handler.CommandHandler(a, b, c, d),
   facts: List(Fact(b, c)),

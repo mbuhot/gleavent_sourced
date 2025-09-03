@@ -1,7 +1,7 @@
-import gleam/string
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/json
+import gleam/string
 
 import gleam/result
 import gleavent_sourced/event_filter.{type EventFilter}
@@ -39,7 +39,8 @@ fn load_events_and_build_context(
   use #(events_by_fact, max_seq) <- result.try(
     event_log.query_events_with_tags(db, filter, handler.event_mapper)
     |> result.map_error(fn(e) {
-      "Failed to load tagged events for command processing: " <> string.inspect(e)
+      "Failed to load tagged events for command processing: "
+      <> string.inspect(e)
     }),
   )
 

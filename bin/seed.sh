@@ -20,7 +20,7 @@ cat > /tmp/seeds.sql << 'EOF'
 -- Clean up any existing test data
 DELETE FROM events;
 
-\echo 'Inserting 10,000 test events...'
+\echo 'Inserting 1000,000 test events...'
 
 -- Insert a variety of test data to demonstrate performance
 INSERT INTO events (event_type, payload, metadata)
@@ -48,7 +48,7 @@ SELECT
     END
   ),
   jsonb_build_object('source', 'benchmark_test', 'batch', '1')
-FROM generate_series(1, 5000) as i;
+FROM generate_series(1, 500000) as i;
 
 INSERT INTO events (event_type, payload, metadata)
 SELECT
@@ -65,7 +65,7 @@ SELECT
     END
   ),
   jsonb_build_object('source', 'benchmark_test', 'batch', '2')
-FROM generate_series(1, 3000) as i;
+FROM generate_series(1, 300000) as i;
 
 INSERT INTO events (event_type, payload, metadata)
 SELECT
@@ -80,7 +80,7 @@ SELECT
     'closed_at', '2024-01-02T15:30:00Z'
   ),
   jsonb_build_object('source', 'benchmark_test', 'batch', '3')
-FROM generate_series(1, 2000) as i;
+FROM generate_series(1, 200000) as i;
 
 -- Insert parent-child ticket relationships for join testing
 INSERT INTO events (event_type, payload, metadata)
@@ -91,8 +91,8 @@ SELECT
     'parent_ticket_id', 'T-' || i      -- Parent ticket ID
   ),
   jsonb_build_object('source', 'benchmark_test', 'batch', '4')
-FROM generate_series(1, 500) as i     -- Creates 500 parent-child relationships
-WHERE i * 2 <= 5000;                   -- Ensure child tickets exist
+FROM generate_series(1, 50000) as i     -- Creates 500 parent-child relationships
+WHERE i * 2 <= 500000;                   -- Ensure child tickets exist
 
 \echo 'Data population complete!'
 \echo 'Added parent-child ticket relationships for join testing'

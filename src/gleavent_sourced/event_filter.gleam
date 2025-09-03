@@ -1,14 +1,23 @@
 import gleam/json
 import gleam/list
 import gleam/option.{type Option}
+import pog
 
 /// Builder for creating event filters with a clean API
 pub type EventFilter {
   EventFilter(filters: List(FilterCondition))
+  CustomSql(sql: String, params: List(pog.Value))
 }
 
 pub fn merge(l: EventFilter, r: EventFilter) {
-  EventFilter(list.append(l.filters, r.filters))
+  case l, r {
+    EventFilter(l_filters), EventFilter(r_filters) ->
+      EventFilter(list.append(l_filters, r_filters))
+    EventFilter(filters), CustomSql(_, _) -> EventFilter(filters)
+    CustomSql(_, _), EventFilter(filters) -> EventFilter(filters)
+    CustomSql(_, _), CustomSql(_, _) ->
+      panic as "Cannot merge two CustomSql filters"
+  }
 }
 
 /// Internal representation of a single filter condition
@@ -33,6 +42,11 @@ pub fn new() -> EventFilter {
   EventFilter(filters: [])
 }
 
+/// Create a custom SQL event filter
+pub fn custom_sql(sql: String, params: List(pog.Value)) -> EventFilter {
+  CustomSql(sql: sql, params: params)
+}
+
 /// Add a filter condition for a specific event type
 ///
 /// Multiple AttributeFilters for the same event type are combined with AND logic.
@@ -47,9 +61,14 @@ pub fn for_type(
   event_type: String,
   attribute_filters: List(AttributeFilter),
 ) -> EventFilter {
-  let combined_condition =
-    combine_attribute_filters_to_condition(event_type, attribute_filters)
-  EventFilter(filters: [combined_condition, ..filter.filters])
+  case filter {
+    EventFilter(filters) -> {
+      let combined_condition =
+        combine_attribute_filters_to_condition(event_type, attribute_filters)
+      EventFilter(filters: [combined_condition, ..filters])
+    }
+    CustomSql(_, _) -> panic as "Cannot add conditions to CustomSql filter"
+  }
 }
 
 /// Create a string equality attribute filter
@@ -74,15 +93,20 @@ pub fn attr_null(field: String) -> AttributeFilter {
 
 /// Set a tag on all filter conditions in this EventFilter
 pub fn with_tag(filter: EventFilter, tag: String) -> EventFilter {
-  let tagged_filters =
-    list.map(filter.filters, fn(condition) {
-      FilterCondition(
-        event_type: condition.event_type,
-        filter_expr: condition.filter_expr,
-        tag: option.Some(tag),
-      )
-    })
-  EventFilter(filters: tagged_filters)
+  case filter {
+    EventFilter(filters) -> {
+      let tagged_filters =
+        list.map(filters, fn(condition) {
+          FilterCondition(
+            event_type: condition.event_type,
+            filter_expr: condition.filter_expr,
+            tag: option.Some(tag),
+          )
+        })
+      EventFilter(filters: tagged_filters)
+    }
+    CustomSql(_, _) -> panic as "Cannot tag CustomSql filter"
+  }
 }
 
 /// Combine multiple AttributeFilters into a single FilterCondition with AND logic

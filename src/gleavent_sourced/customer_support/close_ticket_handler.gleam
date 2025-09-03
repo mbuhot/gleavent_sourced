@@ -1,21 +1,24 @@
+import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/result
 import gleam/string
 import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type CloseTicketCommand, type TicketError, BusinessRuleViolation,
 }
-import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
-import gleavent_sourced/customer_support/ticket_facts
-import gleavent_sourced/facts
+import gleavent_sourced/customer_support/ticket_events.{
+  type TicketEvent, TicketAssigned, TicketClosed, TicketOpened,
+}
+import gleavent_sourced/event_filter
+import gleavent_sourced/parrot_pog
+import gleavent_sourced/sql
 import gleavent_sourced/validation.{require, validate}
-import pog
 
 // Context built from facts to validate ticket closing business rules
 // Contains validation state for the ticket being closed
 pub type TicketCloseContext {
   TicketCloseContext(
+    ticket_id: String,
     exists: Bool,
     is_closed: Bool,
     current_assignee: Option(String),
@@ -26,8 +29,9 @@ pub type TicketCloseContext {
 }
 
 // Default context state before loading events - assumes ticket doesn't exist
-fn initial_context() {
+fn initial_context(ticket_id) {
   TicketCloseContext(
+    ticket_id: ticket_id,
     exists: False,
     is_closed: False,
     current_assignee: None,
@@ -37,25 +41,15 @@ fn initial_context() {
   )
 }
 
-// Define facts needed to validate ticket closing
-fn facts(ticket_id: String) {
-  [
-    ticket_facts.exists(ticket_id, fn(ctx, exists) {
-      TicketCloseContext(..ctx, exists:)
-    }),
-    ticket_facts.current_assignee(ticket_id, fn(ctx, current_assignee) {
-      TicketCloseContext(..ctx, current_assignee:)
-    }),
-    ticket_facts.is_closed(ticket_id, fn(ctx, is_closed) {
-      TicketCloseContext(..ctx, is_closed:)
-    }),
-    ticket_facts.priority(ticket_id, fn(ctx, priority) {
-      TicketCloseContext(..ctx, priority:)
-    }),
-    ticket_facts.child_tickets(ticket_id, fn(ctx, linked_children) {
-      TicketCloseContext(..ctx, linked_children:)
-    }),
-  ]
+// Create custom SQL filter for ticket closed events
+pub fn ticket_closed_events_filter(
+  ticket_id: String,
+  fact_id: String,
+) -> event_filter.EventFilter {
+  let #(sql, params, _decoder) =
+    sql.ticket_closed_events(ticket_id: ticket_id, fact_id: fact_id)
+  let pog_params = list.map(params, parrot_pog.parrot_to_pog)
+  event_filter.custom_sql(sql, pog_params)
 }
 
 // Creates command handler with facts to validate ticket before closing
@@ -68,48 +62,40 @@ pub fn create_close_ticket_handler(
   TicketCloseContext,
   TicketError,
 ) {
-  ticket_commands.handler(initial_context(), execute)
-  |> ticket_commands.with_facts(facts(command.ticket_id))
-  |> ticket_commands.with_enriched_context(enrich_context)
+  initial_context(command.ticket_id)
+  |> ticket_commands.handler(execute)
+  |> ticket_commands.with_event_filter(ticket_closed_events_filter(
+    command.ticket_id,
+    "closed",
+  ))
+  |> ticket_commands.with_reducer(context_reducer)
 }
 
-// Second step: filter out closed children from linked children
-fn enrich_context(
-  db: pog.Connection,
-  context: TicketCloseContext,
-) -> Result(TicketCloseContext, String) {
-  case context.linked_children {
-    [] -> Ok(context)
-    children -> {
-      // build list of facts to query
-      let child_facts =
-        list.map(children, fn(child_id) {
-          ticket_facts.is_closed(child_id, fn(ctx, is_closed) {
-            [#(child_id, is_closed), ..ctx]
-          })
-        })
+fn context_reducer(events_dict, ctx: TicketCloseContext) {
+  dict.values(events_dict)
+  |> list.flatten()
+  |> list.fold(ctx, fn(ctx, e: TicketEvent) {
+    case e {
+      TicketOpened(ticket_id: id, priority: p, ..) if id == ctx.ticket_id ->
+        TicketCloseContext(..ctx, exists: True, priority: Some(p))
 
-      // query event log for all child fact results
-      use results <- result.try(
-        child_facts
-        |> facts.query_event_log(db, _, [], ticket_events.decode)
-        |> result.map_error(fn(_) {
-          "Failed to query child ticket closure status"
-        }),
-      )
+      TicketOpened(ticket_id: id, ..) ->
+        TicketCloseContext(..ctx, open_children: [id, ..ctx.open_children])
 
-      // Filter down to open children
-      let open_children =
-        list.filter_map(results, fn(result) {
-          case result {
-            #(child_id, True) -> Ok(child_id)
-            _ -> Error(Nil)
-          }
-        })
+      TicketAssigned(ticket_id: id, assignee: a, ..) if id == ctx.ticket_id ->
+        TicketCloseContext(..ctx, current_assignee: Some(a))
+      TicketAssigned(..) -> ctx
 
-      Ok(TicketCloseContext(..context, open_children: open_children))
+      TicketClosed(ticket_id: id, ..) if id == ctx.ticket_id ->
+        TicketCloseContext(..ctx, is_closed: True)
+      TicketClosed(ticket_id: id, ..) ->
+        TicketCloseContext(
+          ..ctx,
+          open_children: list.filter(ctx.open_children, fn(x) { x != id }),
+        )
+      _ -> ctx
     }
-  }
+  })
 }
 
 // Core business logic - validates rules then creates TicketClosed event
@@ -124,11 +110,7 @@ fn execute(
   use _ <- validate(resolution_detail(_, command.resolution), context)
   use _ <- validate(closed_at, command.closed_at)
   Ok([
-    ticket_events.TicketClosed(
-      command.ticket_id,
-      command.resolution,
-      command.closed_at,
-    ),
+    TicketClosed(command.ticket_id, command.resolution, command.closed_at),
   ])
 }
 

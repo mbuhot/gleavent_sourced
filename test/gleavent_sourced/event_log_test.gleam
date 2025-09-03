@@ -1,6 +1,7 @@
 import gleam/dict
 import gleam/list
 
+import gleavent_sourced/customer_support/close_ticket_handler
 import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/event_filter
 import gleavent_sourced/event_log
@@ -403,5 +404,88 @@ pub fn append_events_conflict_detection_test() {
         max_seq,
         // Current sequence number
       )
+  })
+}
+
+pub fn custom_sql_append_events_test() {
+  test_runner.txn(fn(db) {
+    let test_metadata = create_test_metadata()
+
+    // Store initial events for our custom SQL to find
+    let initial_events = [
+      ticket_events.TicketOpened(
+        ticket_id: "T-500",
+        title: "Parent ticket",
+        description: "Main ticket",
+        priority: "high",
+      ),
+      ticket_events.TicketParentLinked(
+        ticket_id: "T-501",
+        parent_ticket_id: "T-500",
+      ),
+    ]
+
+    let assert Ok(event_log.AppendSuccess) =
+      event_log.append_events(
+        db,
+        initial_events,
+        ticket_events.encode,
+        test_metadata,
+        event_filter.new(),
+        0,
+      )
+
+    // Get max sequence number from all relevant event types
+    let query_all =
+      event_filter.new()
+      |> event_filter.for_type("TicketOpened", [])
+      |> event_filter.for_type("TicketParentLinked", [])
+      |> event_filter.with_tag("all")
+
+    let assert Ok(#(_, max_seq)) =
+      event_log.query_events_with_tags(db, query_all, ticket_events.decode)
+
+    // Use CustomSql filter for conflict detection
+    let custom_sql_filter =
+      close_ticket_handler.ticket_closed_events_filter("T-500", "test-fact")
+
+    let new_event =
+      ticket_events.TicketClosed(
+        ticket_id: "T-500",
+        resolution: "Fixed the issue",
+        closed_at: "2024-01-01T12:00:00Z",
+      )
+
+    // Should succeed with current sequence number
+    let assert Ok(event_log.AppendSuccess) =
+      event_log.append_events(
+        db,
+        [new_event],
+        ticket_events.encode,
+        test_metadata,
+        custom_sql_filter,
+        max_seq,
+      )
+
+    // Should detect conflict with old sequence number
+    let another_event =
+      ticket_events.TicketAssigned(
+        ticket_id: "T-500",
+        assignee: "test.user",
+        assigned_at: "2024-01-01T13:00:00Z",
+      )
+
+    let assert Ok(event_log.AppendConflict(conflict_count: count)) =
+      event_log.append_events(
+        db,
+        [another_event],
+        ticket_events.encode,
+        test_metadata,
+        custom_sql_filter,
+        0,
+        // Old sequence number should cause conflict
+      )
+
+    assert count > 0
   })
 }

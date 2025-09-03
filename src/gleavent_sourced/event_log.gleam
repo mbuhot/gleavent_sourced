@@ -11,6 +11,7 @@ import gleam/string
 import gleam/erlang/process
 import gleam/time/timestamp.{type Timestamp}
 import gleavent_sourced/event_filter.{type EventFilter}
+
 import pog
 
 /// Custom error type for query operations that can fail at database or mapping level
@@ -70,12 +71,17 @@ pub fn append_events(
     |> json.to_string
 
   // Generate dynamic SQL with conflict checking
-  let sql_and_params =
-    build_dynamic_insert_sql(
-      conflict_filter.filters,
-      last_seen_sequence,
-      events_json_array,
-    )
+  let sql_and_params = case conflict_filter {
+    event_filter.EventFilter(filters) ->
+      build_dynamic_insert_sql(filters, last_seen_sequence, events_json_array)
+    event_filter.CustomSql(sql, params) ->
+      build_custom_sql_insert_sql(
+        sql,
+        params,
+        last_seen_sequence,
+        events_json_array,
+      )
+  }
 
   let batch_query =
     pog.query(sql_and_params.sql)
@@ -103,8 +109,12 @@ pub fn query_events_with_tags(
   filter: EventFilter,
   event_mapper: fn(String, Dynamic) -> Result(event_type, String),
 ) -> Result(#(dict.Dict(String, List(event_type)), Int), QueryError) {
-  // Generate dynamic SQL based on filter conditions
-  let sql_and_params = build_dynamic_query_sql(filter.filters)
+  // Generate SQL based on filter type
+  let sql_and_params = case filter {
+    event_filter.EventFilter(filters) -> build_dynamic_query_sql(filters)
+    event_filter.CustomSql(sql, params) ->
+      SqlAndParams(sql: sql, params: params)
+  }
   let select_query =
     pog.query(sql_and_params.sql)
     |> list.fold(sql_and_params.params, _, fn(query, param) {
@@ -160,17 +170,18 @@ type SqlAndParams {
   SqlAndParams(sql: String, params: List(pog.Value))
 }
 
-
-
 /// Group FilterConditions by their tag
-fn group_conditions_by_tag(conditions: List(event_filter.FilterCondition)) -> List(#(String, List(event_filter.FilterCondition))) {
-  let indexed_conditions = list.index_map(conditions, fn(condition, index) {
-    let tag = case condition.tag {
-      Some(tag) -> tag
-      None -> "condition" <> int.to_string(index)
-    }
-    #(tag, condition)
-  })
+fn group_conditions_by_tag(
+  conditions: List(event_filter.FilterCondition),
+) -> List(#(String, List(event_filter.FilterCondition))) {
+  let indexed_conditions =
+    list.index_map(conditions, fn(condition, index) {
+      let tag = case condition.tag {
+        Some(tag) -> tag
+        None -> "condition" <> int.to_string(index)
+      }
+      #(tag, condition)
+    })
 
   list.group(indexed_conditions, by: fn(pair) { pair.0 })
   |> dict.to_list()
@@ -194,18 +205,23 @@ fn build_tag_group_cte(
     _ -> "tag_" <> string.replace(tag, "-", "_") <> "_events"
   }
 
-  let indexed_conditions = list.index_map(conditions, fn(condition, index) { #(condition, index) })
+  let indexed_conditions =
+    list.index_map(conditions, fn(condition, index) { #(condition, index) })
 
-  let or_clauses = list.map(indexed_conditions, fn(pair) {
-    let #(_condition, index) = pair
-    let param_index_event_type = start_param_index + index * 2 + 1
-    let param_index_payload = start_param_index + index * 2 + 2
+  let or_clauses =
+    list.map(indexed_conditions, fn(pair) {
+      let #(_condition, index) = pair
+      let param_index_event_type = start_param_index + index * 2 + 1
+      let param_index_payload = start_param_index + index * 2 + 2
 
-    "(" <>
-    "e.event_type = $" <> int.to_string(param_index_event_type) <>
-    " AND e.payload @> $" <> int.to_string(param_index_payload) <> "::jsonb" <>
-    ")"
-  })
+      "("
+      <> "e.event_type = $"
+      <> int.to_string(param_index_event_type)
+      <> " AND e.payload @> $"
+      <> int.to_string(param_index_payload)
+      <> "::jsonb"
+      <> ")"
+    })
 
   let where_clause = case or_clauses {
     [] -> "WHERE false"
@@ -213,32 +229,42 @@ fn build_tag_group_cte(
     multiple -> "WHERE (" <> string.join(multiple, " OR ") <> ")"
   }
 
-  let cte = cte_name <> " AS (" <>
-    "  SELECT " <> select_clause <>
-    "  FROM events e" <>
-    "  " <> where_clause <>
-    extra_where <>
-    ")"
+  let cte =
+    cte_name
+    <> " AS ("
+    <> "  SELECT "
+    <> select_clause
+    <> "  FROM events e"
+    <> "  "
+    <> where_clause
+    <> extra_where
+    <> ")"
 
-  let params = list.flatten(list.map(conditions, fn(condition) {
-    [
-      pog.text(condition.event_type),
-      pog.text(json.to_string(condition.filter_expr))
-    ]
-  }))
+  let params =
+    list.flatten(
+      list.map(conditions, fn(condition) {
+        [
+          pog.text(condition.event_type),
+          pog.text(json.to_string(condition.filter_expr)),
+        ]
+      }),
+    )
 
   SqlAndParams(sql: cte, params: params)
 }
 
 /// Build UNION clause from tag groups
-fn build_union_clause(tag_groups: List(#(String, List(event_filter.FilterCondition)))) -> String {
-  let cte_names = list.map(tag_groups, fn(group) {
-    let #(tag, _) = group
-    case tag {
-      "" -> "untagged_events"
-      _ -> "tag_" <> string.replace(tag, "-", "_") <> "_events"
-    }
-  })
+fn build_union_clause(
+  tag_groups: List(#(String, List(event_filter.FilterCondition))),
+) -> String {
+  let cte_names =
+    list.map(tag_groups, fn(group) {
+      let #(tag, _) = group
+      case tag {
+        "" -> "untagged_events"
+        _ -> "tag_" <> string.replace(tag, "-", "_") <> "_events"
+      }
+    })
 
   case cte_names {
     [] -> ""
@@ -255,21 +281,31 @@ fn build_dynamic_query_sql(
     [] ->
       SqlAndParams(
         sql: "SELECT NULL as fact_id, sequence_number, event_type, payload, metadata, 0 as max_sequence_number FROM events WHERE false",
-        params: []
+        params: [],
       )
     _ -> {
       // Group conditions by tag and build CTEs with correct parameter indexing
       let tag_groups = group_conditions_by_tag(conditions)
 
-      let #(results, _) = list.fold(tag_groups, #([], 0), fn(acc, group) {
-        let #(results_acc, param_index) = acc
-        let #(tag, group_conditions) = group
-        let fact_id = "'" <> tag <> "'"
-        let select_clause = fact_id <> " as fact_id, e.sequence_number, e.event_type, e.payload, e.metadata"
-        let result = build_tag_group_cte(tag, group_conditions, param_index, select_clause, "")
-        let next_param_index = param_index + list.length(group_conditions) * 2
-        #([result, ..results_acc], next_param_index)
-      })
+      let #(results, _) =
+        list.fold(tag_groups, #([], 0), fn(acc, group) {
+          let #(results_acc, param_index) = acc
+          let #(tag, group_conditions) = group
+          let fact_id = "'" <> tag <> "'"
+          let select_clause =
+            fact_id
+            <> " as fact_id, e.sequence_number, e.event_type, e.payload, e.metadata"
+          let result =
+            build_tag_group_cte(
+              tag,
+              group_conditions,
+              param_index,
+              select_clause,
+              "",
+            )
+          let next_param_index = param_index + list.length(group_conditions) * 2
+          #([result, ..results_acc], next_param_index)
+        })
 
       let results = list.reverse(results)
       let ctes = list.map(results, fn(result) { result.sql })
@@ -330,17 +366,26 @@ fn build_dynamic_insert_sql(
         "    AND e.sequence_number > " <> int.to_string(last_seen_sequence)
       let tag_groups = group_conditions_by_tag(conditions)
 
-      let #(results, _) = list.fold(tag_groups, #([], 1), fn(acc, group) {
-        let #(results_acc, param_index) = acc
-        let #(tag, group_conditions) = group
-        let result = build_tag_group_cte(tag, group_conditions, param_index, "e.sequence_number", extra_where)
-        let next_param_index = param_index + list.length(group_conditions) * 2
-        #([result, ..results_acc], next_param_index)
-      })
+      let #(results, _) =
+        list.fold(tag_groups, #([], 1), fn(acc, group) {
+          let #(results_acc, param_index) = acc
+          let #(tag, group_conditions) = group
+          let result =
+            build_tag_group_cte(
+              tag,
+              group_conditions,
+              param_index,
+              "e.sequence_number",
+              extra_where,
+            )
+          let next_param_index = param_index + list.length(group_conditions) * 2
+          #([result, ..results_acc], next_param_index)
+        })
 
       let results = list.reverse(results)
       let ctes = list.map(results, fn(result) { result.sql })
-      let conflict_params = list.flatten(list.map(results, fn(result) { result.params }))
+      let conflict_params =
+        list.flatten(list.map(results, fn(result) { result.params }))
       let conflict_union = build_union_clause(tag_groups)
 
       let final_sql =
@@ -375,6 +420,60 @@ fn build_dynamic_insert_sql(
       SqlAndParams(sql: final_sql, params: all_params)
     }
   }
+}
+
+/// Build dynamic SQL INSERT with custom SQL for conflict checking
+fn build_custom_sql_insert_sql(
+  custom_sql: String,
+  custom_params: List(pog.Value),
+  last_seen_sequence: Int,
+  events_json_array: String,
+) -> SqlAndParams {
+  // Calculate parameter numbers - custom params come first
+  let custom_param_count = list.length(custom_params)
+  let last_seq_param_num = custom_param_count + 1
+  let events_array_param_num = custom_param_count + 2
+
+  // Wrap the custom SQL to filter by sequence_number > last_seen_sequence
+  let conflict_sql =
+    "WITH custom_conflicts AS ("
+    <> custom_sql
+    <> ") SELECT sequence_number FROM custom_conflicts WHERE sequence_number > $"
+    <> int.to_string(last_seq_param_num)
+
+  let final_sql =
+    "WITH conflict_check (conflict_count) AS ("
+    <> "  SELECT COUNT(*) FROM ("
+    <> conflict_sql
+    <> "  ) conflicts"
+    <> "), new_events_parsed AS ("
+    <> "  SELECT"
+    <> "    event_data ->> 'type' as event_type,"
+    <> "    event_data -> 'data' as event_data,"
+    <> "    event_data -> 'metadata' as metadata"
+    <> "  FROM jsonb_array_elements($"
+    <> int.to_string(events_array_param_num)
+    <> ") AS event_data"
+    <> "), insert_result AS ("
+    <> "  INSERT INTO events (event_type, payload, metadata)"
+    <> "  SELECT event_type, event_data, metadata"
+    <> "  FROM new_events_parsed"
+    <> "  WHERE (SELECT conflict_count FROM conflict_check) = 0"
+    <> "  RETURNING sequence_number"
+    <> ")"
+    <> "SELECT"
+    <> "  CASE"
+    <> "    WHEN EXISTS(SELECT 1 FROM insert_result) THEN 'success'"
+    <> "    ELSE 'conflict'"
+    <> "  END as status,"
+    <> "  (SELECT conflict_count FROM conflict_check) as conflict_count"
+
+  let all_params =
+    list.append(custom_params, [
+      pog.int(last_seen_sequence),
+      pog.text(events_json_array),
+    ])
+  SqlAndParams(sql: final_sql, params: all_params)
 }
 
 /// Decoder for append results
