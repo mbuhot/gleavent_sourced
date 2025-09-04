@@ -110,8 +110,8 @@ pub fn execute_with_retries(
 fn append_events_with_consistency_check(
   db: pog.Connection,
   handler: CommandHandlerV2(command, event, context, error),
-  command: command,
-  context: context,
+  _command: command,
+  _context: context,
   events: List(event),
   metadata: dict.Dict(String, String),
   max_sequence: Int,

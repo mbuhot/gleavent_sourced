@@ -263,7 +263,7 @@ pub fn append_events(
         FROM json_array_elements($1::json) AS value
         RETURNING sequence_number
       )
-      SELECT 'success' as status FROM batch_insert"
+      SELECT 'success' as status"
     }
     _ -> {
       // Generate consistency check query using facts
