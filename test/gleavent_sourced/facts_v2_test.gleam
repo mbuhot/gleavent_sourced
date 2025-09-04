@@ -76,7 +76,12 @@ pub fn append_events_with_facts_consistency_test() {
       )
 
     let assert Ok(final_context) =
-      facts_v2.query_event_log(db, [ticket_exists_fact], initial_context, ticket_events.decode)
+      facts_v2.query_event_log(
+        db,
+        [ticket_exists_fact],
+        initial_context,
+        ticket_events.decode,
+      )
 
     assert final_context.ticket_exists == True
 
@@ -96,7 +101,8 @@ pub fn append_events_with_facts_consistency_test() {
         ticket_events.encode,
         test_metadata,
         [ticket_exists_fact],
-        0,  // Stale sequence number should cause conflict
+        0,
+        // Stale sequence number should cause conflict
       )
   })
 }
@@ -141,7 +147,10 @@ pub fn different_parameter_counts_composition_test() {
     )
 
   let composed =
-    facts_v2.compose_facts([no_param_fact, one_param_fact, three_param_fact], facts_v2.Read)
+    facts_v2.compose_facts(
+      [no_param_fact, one_param_fact, three_param_fact],
+      facts_v2.Read,
+    )
 
   // Should generate exact SQL with correct parameter adjustments
   let expected_sql =
@@ -190,7 +199,8 @@ pub fn complex_sql_with_subqueries_test() {
       apply_events: fn(context, _events) { context },
     )
 
-  let composed = facts_v2.compose_facts([complex_fact, simple_fact], facts_v2.Read)
+  let composed =
+    facts_v2.compose_facts([complex_fact, simple_fact], facts_v2.Read)
 
   // Should generate exact SQL preserving complex subqueries
   let expected_sql =

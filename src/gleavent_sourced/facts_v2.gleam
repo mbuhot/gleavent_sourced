@@ -50,7 +50,10 @@ pub fn new_fact(
 }
 
 /// Compose multiple facts into a single CTE query
-pub fn compose_facts(facts: List(Fact(context, event_type)), operation: QueryOperation) -> ComposedQuery {
+pub fn compose_facts(
+  facts: List(Fact(context, event_type)),
+  operation: QueryOperation,
+) -> ComposedQuery {
   case facts {
     [] ->
       ComposedQuery(
@@ -245,7 +248,8 @@ pub fn append_events(
     }
     _ -> {
       // Generate consistency check query using facts
-      let composed_query = compose_facts(consistency_facts, AppendConsistencyCheck)
+      let composed_query =
+        compose_facts(consistency_facts, AppendConsistencyCheck)
 
       "WITH consistency_check AS (" <> composed_query.sql <> "),
        batch_insert AS (
@@ -255,8 +259,12 @@ pub fn append_events(
            (value->>'data')::jsonb,
            (value->>'metadata')::jsonb,
            CURRENT_TIMESTAMP
-         FROM json_array_elements($" <> int.to_string(list.length(composed_query.params) + 2) <> "::json) AS value
-         WHERE COALESCE((SELECT MAX(max_sequence_number) FROM consistency_check), 0) <= $" <> int.to_string(list.length(composed_query.params) + 1) <> "
+         FROM json_array_elements($" <> int.to_string(
+        list.length(composed_query.params) + 2,
+      ) <> "::json) AS value
+         WHERE COALESCE((SELECT MAX(max_sequence_number) FROM consistency_check), 0) <= $" <> int.to_string(
+        list.length(composed_query.params) + 1,
+      ) <> "
          RETURNING sequence_number
        ),
        conflict_check AS (
@@ -274,22 +282,27 @@ pub fn append_events(
   let composed_params = case list.length(consistency_facts) {
     0 -> []
     _ -> {
-      let composed_query = compose_facts(consistency_facts, AppendConsistencyCheck)
+      let composed_query =
+        compose_facts(consistency_facts, AppendConsistencyCheck)
       composed_query.params
     }
   }
 
-  // Prepare parameters: composed query params + last_seen_sequence + events_json
-  let all_params = list.append(composed_params, [
-    pog.int(last_seen_sequence),
-    pog.text(events_json_array)
-  ])
+  // Prepare parameters based on whether we have consistency facts
+  let all_params = case list.length(consistency_facts) {
+    0 -> [pog.text(events_json_array)]
+    // Simple case: only JSON array
+    _ ->
+      list.append(composed_params, [
+        pog.int(last_seen_sequence),
+        pog.text(events_json_array),
+      ])
+    // With consistency: facts params + sequence + JSON
+  }
 
   let batch_query =
     pog.query(insert_sql)
-    |> list.fold(all_params, _, fn(query, param) {
-      pog.parameter(query, param)
-    })
+    |> list.fold(all_params, _, fn(query, param) { pog.parameter(query, param) })
     |> pog.returning(append_result_decoder())
 
   use returned <- result.try(pog.execute(batch_query, on: db))

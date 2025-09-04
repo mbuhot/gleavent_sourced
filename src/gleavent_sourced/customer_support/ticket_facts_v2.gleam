@@ -27,7 +27,11 @@ pub fn exists(
   ticket_id: String,
   update_context: fn(context, Bool) -> context,
 ) -> facts_v2.Fact(context, TicketEvent) {
-  query_by_type_and_id("TicketOpened", ticket_id, fold_into(update_context, False, fn(_acc, _event) { True }))
+  query_by_type_and_id(
+    "TicketOpened",
+    ticket_id,
+    fold_into(update_context, False, fn(_acc, _event) { True }),
+  )
 }
 
 /// Whether a ticket is closed (derived from TicketClosed events)
@@ -35,7 +39,11 @@ pub fn is_closed(
   ticket_id: String,
   update_context: fn(context, Bool) -> context,
 ) -> facts_v2.Fact(context, TicketEvent) {
-  query_by_type_and_id("TicketClosed", ticket_id, fold_into(update_context, False, fn(_acc, _event) { True }))
+  query_by_type_and_id(
+    "TicketClosed",
+    ticket_id,
+    fold_into(update_context, False, fn(_acc, _event) { True }),
+  )
 }
 
 /// Current assignee of a ticket (derived from TicketAssigned events)
@@ -43,12 +51,16 @@ pub fn current_assignee(
   ticket_id: String,
   update_context: fn(context, Option(String)) -> context,
 ) -> facts_v2.Fact(context, TicketEvent) {
-  query_by_type_and_id("TicketAssigned", ticket_id, fold_into(update_context, None, fn(acc, event) {
-    case event {
-      ticket_events.TicketAssigned(_, assignee, _) -> Some(assignee)
-      _ -> acc
-    }
-  }))
+  query_by_type_and_id(
+    "TicketAssigned",
+    ticket_id,
+    fold_into(update_context, None, fn(acc, event) {
+      case event {
+        ticket_events.TicketAssigned(_, assignee, _) -> Some(assignee)
+        _ -> acc
+      }
+    }),
+  )
 }
 
 /// Priority of a ticket (derived from TicketOpened events)
@@ -56,12 +68,16 @@ pub fn priority(
   ticket_id: String,
   update_context: fn(context, Option(String)) -> context,
 ) -> facts_v2.Fact(context, TicketEvent) {
-  query_by_type_and_id("TicketOpened", ticket_id, fold_into(update_context, None, fn(acc, event) {
-    case event {
-      ticket_events.TicketOpened(_, _, _, priority) -> Some(priority)
-      _ -> acc
-    }
-  }))
+  query_by_type_and_id(
+    "TicketOpened",
+    ticket_id,
+    fold_into(update_context, None, fn(acc, event) {
+      case event {
+        ticket_events.TicketOpened(_, _, _, priority) -> Some(priority)
+        _ -> acc
+      }
+    }),
+  )
 }
 
 /// List of child ticket IDs linked to a parent ticket
@@ -69,7 +85,9 @@ pub fn child_tickets(
   parent_ticket_id: String,
   update_context: fn(context, List(String)) -> context,
 ) -> facts_v2.Fact(context, TicketEvent) {
-  let update_with_reverse = fn(context, children){ update_context(context, list.reverse(children)) }
+  let update_with_reverse = fn(context, children) {
+    update_context(context, list.reverse(children))
+  }
   facts_v2.new_fact(
     sql: "SELECT * FROM events e WHERE e.event_type = 'TicketParentLinked' AND e.payload @> jsonb_build_object('parent_ticket_id', $1::text)",
     params: [pog.text(parent_ticket_id)],

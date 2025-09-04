@@ -14,7 +14,7 @@ I am a junior engineer with no real production experience. I have read extensive
 ## Development Process (TDD with Human-in-the-Loop)
 
 ### Test-Driven Development Cycle
-1. Create types and function stubs using `todo "message"` syntax
+1. Create types and function stubs using `todo as "message"` syntax
 2. Write one test at a time
 3. Ensure it compiles
 4. Ensure it fails as expected (hitting the `todo`)
@@ -26,7 +26,7 @@ I am a junior engineer with no real production experience. I have read extensive
 
 ### Approval Protocol
 - Show failing test output first
-- Show passing test output second  
+- Show passing test output second
 - **STOP IMMEDIATELY** after showing passing results
 - Ask: "May I proceed to refactor/next test?"
 - **DO NOT continue ANY work without explicit approval**
@@ -70,13 +70,13 @@ No hallucinated success metrics or other nonsense.
   let assert Ok(events) = command_handler.execute(...)
   let assert [first_event, second_event] = events
   let assert #(result, count) = query_result
-  
-  // CORRECT - boolean and equality assertions  
+
+  // CORRECT - boolean and equality assertions
   assert list.length(events) == 2
   assert list.contains(events, expected_event)
   assert user.name == "John"
   assert !user.is_deleted
-  
+
   // WRONG - using let assert for equality/boolean checks
   let assert True = list.contains(events, expected_event)  // BAD
   let assert 2 = list.length(events)  // BAD
@@ -98,7 +98,7 @@ No hallucinated success metrics or other nonsense.
     test_runner.run_eunit(["gleavent_sourced/<module_name>_test"])
   }
   ```
-- **Verbose test output** (shows test names and timing): 
+- **Verbose test output** (shows test names and timing):
   ```gleam
   pub fn main() {
     test_runner.run_eunit_verbose(["gleavent_sourced/<module_name>_test"], verbose: True)
@@ -161,7 +161,7 @@ No hallucinated success metrics or other nonsense.
 ## Implementation Priority
 
 1. **Basic Event Persistence**: Create events table, append events, read them back
-2. **Query Filtering**: Filter by event type, then by event attributes  
+2. **Query Filtering**: Filter by event type, then by event attributes
 3. **Optimistic Locking**: Implement CTE-based consistency mechanism from Rico's blog post
 
 Focus on aggregateless event sourcing with single global event log rather than traditional event streams and aggregates.
@@ -206,7 +206,7 @@ Focus on aggregateless event sourcing with single global event log rather than t
 ## Uncertainty Protocol
 
 When unsure about implementation:
-1. STOP immediately 
+1. STOP immediately
 2. Ask for assistance
 3. Do not attempt conservative guessing
 4. Do not remove functionality to make tests pass
