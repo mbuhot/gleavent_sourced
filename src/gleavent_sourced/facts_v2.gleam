@@ -139,13 +139,13 @@ pub fn build_context(
   })
 }
 
-/// Query event log using composed facts
-pub fn query_event_log(
+/// Query event log using composed facts, returning both context and max sequence number
+pub fn query_event_log_with_sequence(
   db: pog.Connection,
   facts: List(Fact(context, event_type)),
   initial_context: context,
   event_decoder: fn(String, Dynamic) -> Result(event_type, String),
-) -> Result(context, String) {
+) -> Result(#(context, Int), String) {
   let composed_query = compose_facts(facts, Read)
 
   let select_query =
@@ -158,6 +158,12 @@ pub fn query_event_log(
   case pog.execute(select_query, on: db) {
     Ok(returned) -> {
       let raw_rows = returned.rows
+
+      // Extract max sequence number from first row (all rows have same max_sequence_number)
+      let max_sequence = case list.first(raw_rows) {
+        Ok(first_row) -> first_row.max_sequence_number
+        Error(_) -> 0
+      }
 
       // Group events by fact ID and map them
       case
@@ -192,7 +198,7 @@ pub fn query_event_log(
 
           let final_context =
             build_context(facts, events_by_fact, initial_context)
-          Ok(final_context)
+          Ok(#(final_context, max_sequence))
         }
         Error(msg) -> Error(msg)
       }
@@ -200,6 +206,19 @@ pub fn query_event_log(
     Error(pog_error) ->
       Error("Database query failed: " <> string.inspect(pog_error))
   }
+}
+
+/// Query event log using composed facts
+pub fn query_event_log(
+  db: pog.Connection,
+  facts: List(Fact(context, event_type)),
+  initial_context: context,
+  event_decoder: fn(String, Dynamic) -> Result(event_type, String),
+) -> Result(context, String) {
+  use #(final_context, _max_sequence) <- result.try(
+    query_event_log_with_sequence(db, facts, initial_context, event_decoder),
+  )
+  Ok(final_context)
 }
 
 /// Append events to the log using facts for consistency checking
