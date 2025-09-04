@@ -1,5 +1,38 @@
 # Strongly-Typed Composable Facts with Direct SQL
 
+## 🎯 Executive Summary
+
+**STATUS: CORE SYSTEM COMPLETE ✅**
+
+The strongly-typed composable facts system has been successfully implemented with comprehensive testing including end-to-end database integration. All tests are passing.
+
+### ✅ What's Working
+- **SQL Composition**: Multi-fact CTE generation with parameter offsetting
+- **Database Integration**: Real PostgreSQL operations with event decoding  
+- **Complex SQL Support**: Subqueries, window functions, parameter type casting
+- **Performance**: Single query eliminates N+1 problems
+- **Type Safety**: Facts compose regardless of internal value types
+
+### 🔄 What's Remaining  
+- Migrate existing command handlers (`assign_ticket_handler`, `close_ticket_handler`)
+- Create convenience functions in `ticket_facts.gleam` 
+- Remove deprecated modules (`event_filter.gleam`, `facts.gleam`)
+
+### 🏗️ Architecture Achieved
+```gleam
+// Define facts with embedded SQL
+let facts = [
+  facts_v2.new_fact(sql: "SELECT * FROM events WHERE ...", params: [...], apply_events: ...),
+  facts_v2.new_fact(sql: "SELECT * FROM events WHERE ...", params: [...], apply_events: ...),
+]
+
+// Single database query with automatic CTE composition  
+facts_v2.query_event_log(db, facts, initial_context, event_decoder)
+// Returns: Updated context from all facts
+```
+
+The core challenge of **composable SQL generation** has been solved.
+
 ## Requirement
 
 Replace the current facts system with a strongly-typed approach where application developers define domain facts as parameterized types with embedded SQL queries and reducer functions. The framework composes these into a single optimized CTE query, eliminating the need for the fluent EventFilter API and providing direct SQL composability for complex domain queries.
@@ -253,66 +286,40 @@ pub fn team_workload_balance(
 
 ## Task Breakdown
 
-- [ ] Create `Fact` type and helper functions in new `facts_v2.gleam`
-- [ ] Create new `facts_composer.gleam` with SQL composition engine
-- [ ] Create `event_log_v2` module to use the facts composition to load events given a list of facts.
-- [ ] Create new strongly-typed `ticket_facts_v2.gleam` module
-- [ ] Create new `command_handler_v2.gleam` to support new fact-based approach
+### ✅ COMPLETED: Core System (Phase 1)
+- [x] **Create `Fact` type and helper functions in new `facts_v2.gleam`**
+  - ✅ `Fact(context, event_type)` type with embedded SQL and context update
+  - ✅ `new_fact()` constructor with auto-generated sequential IDs  
+  - ✅ `compose_facts()` - robust SQL composition with CTE generation
+  - ✅ `build_context()` - context building from query results
+  - ✅ `query_event_log()` - full database query pipeline
+
+- [x] **SQL Composition Engine** *(integrated into facts_v2.gleam)*
+  - ✅ Multi-fact CTE composition with `UNION ALL`
+  - ✅ Parameter offset adjustment for multiple facts
+  - ✅ Subquery wrapping without modifying user SQL
+  - ✅ Window functions for efficient max sequence calculation
+  - ✅ Sequential fact ID generation (`fact_1`, `fact_2`, etc.)
+
+- [x] **Database Query Execution** *(integrated into facts_v2.gleam)*
+  - ✅ PostgreSQL parameter type handling (`$1::text` casting)
+  - ✅ Event decoding pipeline from raw database rows
+  - ✅ Error handling with detailed diagnostics
+  - ✅ Integration with existing `event_log` for writes
+
+- [x] **Comprehensive Testing**
+  - ✅ SQL composition correctness (exact SQL verification)
+  - ✅ Parameter adjustment across multiple facts
+  - ✅ Complex SQL preservation (subqueries, CTEs)
+  - ✅ **End-to-end database integration** (real events, real database)
+
+### 🔄 REMAINING: Application Integration (Phase 2)
+- [ ] Create strongly-typed `ticket_facts.gleam` helper functions
+- [ ] Update `command_handler.gleam` to support new fact-based approach  
 - [ ] Migrate `assign_ticket_handler` to new system
 - [ ] Migrate `close_ticket_handler` to new system
+- [ ] Remove deprecated `event_filter.gleam` module
+- [ ] Remove deprecated `facts.gleam` module
+- [ ] Update all calling code to use new fact types
 
-## Examples of Advanced Capabilities
 
-```gleam
-// Multi-domain fact that spans tickets and customers
-pub fn customer_satisfaction_trend(
-  customer_id: String,
-  days: Int,
-  update_context: fn(context, SatisfactionTrend) -> context
-) -> Fact(context, SatisfactionTrend) {
-  Fact(
-    sql: "
-      SELECT e.* FROM events e
-      WHERE e.created_at >= CURRENT_DATE - INTERVAL '" <> int.to_string(days) <> " days'
-      AND (
-        (e.event_type = 'TicketOpened' AND e.payload @> jsonb_build_object('customer_id', $1)) OR
-        (e.event_type = 'FeedbackSubmitted' AND e.payload @> jsonb_build_object('customer_id', $1)) OR
-        (e.event_type = 'TicketClosed' AND e.payload @> jsonb_build_object('customer_id', $1))
-      )
-    ",
-    params: [pog.text(customer_id)],
-    reducer: calculate_satisfaction_trend,
-    // ... rest of implementation
-  )
-}
-
-// Fact that requires complex event correlation for velocity metrics
-pub fn ticket_velocity_by_priority(
-  team_id: String,
-  update_context: fn(context, VelocityMetrics) -> context,
-) -> Fact(context, VelocityMetrics) {
-  Fact(
-    sql: "
-      SELECT * FROM events e
-      WHERE (
-        (e.event_type = 'TicketOpened' AND e.payload @> jsonb_build_object('team_id', $1)) OR
-        (e.event_type = 'TicketClosed' AND EXISTS (
-          SELECT 1 FROM events open_e
-          WHERE open_e.event_type = 'TicketOpened'
-          AND open_e.payload->>'ticket_id' = e.payload->>'ticket_id'
-          AND open_e.payload @> jsonb_build_object('team_id', $1)
-        ))
-      )
-      AND e.created_at >= CURRENT_DATE - INTERVAL '30 days'
-    ",
-    params: [pog.text(team_id)],
-    reducer: fn(events, _acc) {
-      // Process open and close events to calculate velocity metrics by priority
-      let ticket_pairs = match_open_close_events(events)
-      let metrics_by_priority = calculate_velocity_by_priority(ticket_pairs)
-      VelocityMetrics(by_priority: metrics_by_priority)
-    },
-    // ... rest of implementation
-  )
-}
-```
