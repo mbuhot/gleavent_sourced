@@ -3,8 +3,7 @@ import gleam/dict
 import gleam/option.{None, Some}
 import gleavent_sourced/customer_support/ticket_events
 import gleavent_sourced/customer_support/ticket_facts_v2
-import gleavent_sourced/event_filter
-import gleavent_sourced/event_log
+
 import gleavent_sourced/facts_v2
 import gleavent_sourced/test_runner
 
@@ -60,13 +59,13 @@ pub fn ticket_lifecycle_facts_test() {
       ),
     ]
 
-    let assert Ok(event_log.AppendSuccess) =
-      event_log.append_events(
+    let assert Ok(facts_v2.AppendSuccess) =
+      facts_v2.append_events(
         db,
         events,
         ticket_events.encode,
         test_metadata,
-        event_filter.new(),
+        [],
         0,
       )
 
@@ -154,13 +153,13 @@ pub fn parent_child_ticket_facts_test() {
       ),
     ]
 
-    let assert Ok(event_log.AppendSuccess) =
-      event_log.append_events(
+    let assert Ok(facts_v2.AppendSuccess) =
+      facts_v2.append_events(
         db,
         events,
         ticket_events.encode,
         test_metadata,
-        event_filter.new(),
+        [],
         0,
       )
 
@@ -221,13 +220,13 @@ pub fn duplicate_ticket_facts_test() {
       ),
     ]
 
-    let assert Ok(event_log.AppendSuccess) =
-      event_log.append_events(
+    let assert Ok(facts_v2.AppendSuccess) =
+      facts_v2.append_events(
         db,
         events,
         ticket_events.encode,
         test_metadata,
-        event_filter.new(),
+        [],
         0,
       )
 
