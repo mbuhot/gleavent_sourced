@@ -2,9 +2,9 @@
 
 ## 🎯 Executive Summary
 
-**STATUS: CORE SYSTEM COMPLETE ✅**
+**STATUS: COMMAND HANDLER V2 COMPLETE ✅**
 
-The strongly-typed composable facts system has been successfully implemented with comprehensive testing including end-to-end database integration. All tests are passing.
+The strongly-typed composable facts system and new command handler are successfully implemented with comprehensive testing including end-to-end database integration. All tests are passing.
 
 ### ✅ What's Working
 - **SQL Composition**: Multi-fact CTE generation with parameter offsetting
@@ -12,26 +12,36 @@ The strongly-typed composable facts system has been successfully implemented wit
 - **Complex SQL Support**: Subqueries, window functions, parameter type casting
 - **Performance**: Single query eliminates N+1 problems
 - **Type Safety**: Facts compose regardless of internal value types
+- **Command Handler V2**: Simplified metadata handling, automatic retry on conflicts, optimistic concurrency control
 
 ### 🔄 What's Remaining
-- Migrate existing command handlers (`assign_ticket_handler`, `close_ticket_handler`)
-- Create convenience functions in `ticket_facts.gleam`
-- Remove deprecated modules (`event_filter.gleam`, `facts.gleam`)
+- Migrate existing command handlers (`assign_ticket_handler`, `close_ticket_handler`) to new system
+- Remove deprecated modules (`command_handler.gleam`, `event_filter.gleam`, `facts.gleam`, `event_log.gleam`)
+- Remove v2 suffixes from all modules and types (final cleanup)
 
 ### 🏗️ Architecture Achieved
 ```gleam
-// Define facts with embedded SQL
-let facts = [
-  facts_v2.new_fact(sql: "SELECT * FROM events WHERE ...", params: [...], apply_events: ...),
-  facts_v2.new_fact(sql: "SELECT * FROM events WHERE ...", params: [...], apply_events: ...),
-]
+// Command Handler V2 - Simplified API with system-level metadata
+let handler = command_handler_v2.new(
+  initial_context,
+  facts,
+  execute,
+  event_decoder,
+  event_encoder,
+)
 
-// Single database query with automatic CTE composition
-facts_v2.query_event_log(db, facts, initial_context, event_decoder)
-// Returns: Updated context from all facts
+// System provides metadata at execution time
+let metadata = dict.from_list([
+  #("user_id", "alice@example.com"),
+  #("session_id", "sess_123456"),
+  #("correlation_id", "corr_abc789"),
+])
+
+command_handler_v2.execute(db, handler, command, metadata)
+// Returns: CommandResult with automatic retry on conflicts
 ```
 
-The core challenge of **composable SQL generation** has been solved.
+The core challenges of **composable SQL generation** and **clean metadata handling** have been solved.
 
 ## Requirement
 
@@ -327,28 +337,41 @@ pub fn team_workload_balance(
   - ✅ Proper conflict detection without string manipulation
   - ✅ 5/5 tests passing including append success/conflict scenarios
 
-### 🔄 REMAINING: Phase 2B - Command Handler Migration
-- [ ] Create `command_handler_v2.gleam` to support new fact-based approach  
-- [ ] Migrate `assign_ticket_handler` to new system
-- [ ] Migrate `close_ticket_handler` to new system
-- [ ] Update all calling code to use new fact types
-- [ ] Remove deprecated `event_filter.gleam`, `facts.gleam`, `event_log.gleam`, `command_handler.gleam` modules
-- [ ] Remove v2 suffixes from all modules and types
+### ✅ COMPLETED: Phase 2B - Command Handler V2 Implementation
+- [x] **Create `command_handler_v2.gleam` with simplified metadata design**
+  - ✅ Removed complex `metadata_generator` functions - metadata provided by system at execution time
+  - ✅ Higher-level API: `new(initial_context, facts, execute, event_decoder, event_encoder)`
+  - ✅ Automatic retry on conflicts with configurable retry count
+  - ✅ Uses `facts_v2.query_event_log_with_sequence` for context loading + max sequence
+  - ✅ Uses `facts_v2.append_events` for optimistic concurrency control
+  - ✅ 4 behavioral tests covering rejection, success+persistence, metadata integration, conflict retry
+
+- [x] **Fix critical bug in `facts_v2.append_events`**
+  - ✅ Fixed parameter mismatch when using empty consistency facts list
+  - ✅ Proper SQL parameter handling for both simple and consistency-check cases
+
+### 🔄 REMAINING: Phase 2C - Migration & Cleanup
+- [ ] Migrate `assign_ticket_handler` to use `command_handler_v2`
+- [ ] Migrate `close_ticket_handler` to use `command_handler_v2` 
+- [ ] Update all calling code to use new command handler
+- [ ] Remove deprecated `command_handler.gleam`, `event_filter.gleam`, `facts.gleam`, `event_log.gleam` modules
+- [ ] Remove v2 suffixes from all modules and types (final cleanup)
 
 ### 📋 SESSION HANDOFF CONTEXT
 
 **Key Accomplishments This Session:**
-- Fixed critical event ordering bug in `facts_v2` (used inefficient `list.group` → custom fold with order preservation)
-- Implemented clean SQL generation without string manipulation (operation types instead of replace)
-- All event appending functionality working with proper conflict detection
+- ✅ Implemented complete `command_handler_v2.gleam` with simplified metadata design
+- ✅ Fixed critical parameter handling bug in `facts_v2.append_events` for empty consistency facts
+- ✅ Added `query_event_log_with_sequence` to return both context and max sequence number
+- ✅ Streamlined test suite from 7 to 4 focused behavioral tests (removed redundant/low-value tests)
+- ✅ Comprehensive testing: command rejection, success+persistence, metadata integration, conflict retry
 
 **Files Modified:**
-- `src/gleavent_sourced/customer_support/ticket_facts_v2.gleam` - Complete with helpers
-- `src/gleavent_sourced/facts_v2.gleam` - Added append_events, QueryOperation  
-- `test/gleavent_sourced/ticket_facts_v2_test.gleam` - 4 tests passing
-- `test/gleavent_sourced/facts_v2_test.gleam` - 5 tests passing (including append test)
+- `src/gleavent_sourced/command_handler_v2.gleam` - Complete implementation with metadata simplification
+- `src/gleavent_sourced/facts_v2.gleam` - Fixed append_events parameter handling + added query_event_log_with_sequence
+- `test/gleavent_sourced/command_handler_v2_test.gleam` - 4 streamlined behavioral tests passing
 
 **Next Session Priority:**
-1. Create `command_handler_v2.gleam` module
-2. Migrate `assign_ticket_handler` to use `ticket_facts_v2` and `facts_v2.append_events`
-3. Ensure optimistic concurrency control works end-to-end
+1. Migrate `assign_ticket_handler` to use `command_handler_v2` 
+2. Migrate `close_ticket_handler` to use `command_handler_v2`
+3. Remove deprecated modules and v2 suffixes
