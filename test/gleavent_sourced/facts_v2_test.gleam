@@ -29,8 +29,80 @@ pub fn create_test_metadata() -> dict.Dict(String, String) {
   ])
 }
 
+pub fn append_events_with_facts_consistency_test() {
+  test_runner.txn(fn(db) {
+    let test_metadata = create_test_metadata()
+
+    // Create a fact to check if ticket T-500 exists
+    let ticket_exists_fact =
+      facts_v2.new_fact(
+        sql: "SELECT * FROM events e WHERE e.event_type = 'TicketOpened' AND e.payload @> jsonb_build_object('ticket_id', $1::text)",
+        params: [pog.text("T-500")],
+        apply_events: fn(context: IntegrationTestContext, events) {
+          let exists = case events {
+            [] -> False
+            _ -> True
+          }
+          IntegrationTestContext(..context, ticket_exists: exists)
+        },
+      )
+
+    // First append: Should succeed (no conflicts)
+    let events_to_add = [
+      ticket_events.TicketOpened(
+        ticket_id: "T-500",
+        title: "Test ticket for append",
+        description: "Testing facts_v2 append functionality",
+        priority: "medium",
+      ),
+    ]
+
+    let assert Ok(facts_v2.AppendSuccess) =
+      facts_v2.append_events(
+        db,
+        events_to_add,
+        ticket_events.encode,
+        test_metadata,
+        [ticket_exists_fact],
+        0,
+      )
+
+    // Verify the event was stored by querying with facts
+    let initial_context =
+      IntegrationTestContext(
+        ticket_exists: False,
+        ticket_closed: False,
+        ticket_priority: "unknown",
+      )
+
+    let assert Ok(final_context) =
+      facts_v2.query_event_log(db, [ticket_exists_fact], initial_context, ticket_events.decode)
+
+    assert final_context.ticket_exists == True
+
+    // Test conflict detection: Try to append with stale sequence number
+    let more_events = [
+      ticket_events.TicketAssigned(
+        ticket_id: "T-500",
+        assignee: "test@company.com",
+        assigned_at: "2024-01-15T12:00:00Z",
+      ),
+    ]
+
+    let assert Ok(facts_v2.AppendConflict) =
+      facts_v2.append_events(
+        db,
+        more_events,
+        ticket_events.encode,
+        test_metadata,
+        [ticket_exists_fact],
+        0,  // Stale sequence number should cause conflict
+      )
+  })
+}
+
 pub fn empty_facts_list_handles_gracefully_test() {
-  let composed = facts_v2.compose_facts([])
+  let composed = facts_v2.compose_facts([], facts_v2.Read)
 
   // Should return exact empty query
   let expected_sql =
@@ -69,7 +141,7 @@ pub fn different_parameter_counts_composition_test() {
     )
 
   let composed =
-    facts_v2.compose_facts([no_param_fact, one_param_fact, three_param_fact])
+    facts_v2.compose_facts([no_param_fact, one_param_fact, three_param_fact], facts_v2.Read)
 
   // Should generate exact SQL with correct parameter adjustments
   let expected_sql =
@@ -118,7 +190,7 @@ pub fn complex_sql_with_subqueries_test() {
       apply_events: fn(context, _events) { context },
     )
 
-  let composed = facts_v2.compose_facts([complex_fact, simple_fact])
+  let composed = facts_v2.compose_facts([complex_fact, simple_fact], facts_v2.Read)
 
   // Should generate exact SQL preserving complex subqueries
   let expected_sql =

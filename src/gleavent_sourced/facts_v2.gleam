@@ -27,6 +27,18 @@ pub type ComposedQuery {
   ComposedQuery(sql: String, params: List(pog.Value))
 }
 
+/// Operation type for SQL composition
+pub type QueryOperation {
+  Read
+  AppendConsistencyCheck
+}
+
+/// Result type for append operations with optimistic concurrency control
+pub type AppendResult {
+  AppendSuccess
+  AppendConflict
+}
+
 /// Create a new Fact with auto-generated unique ID
 pub fn new_fact(
   sql sql: String,
@@ -38,7 +50,7 @@ pub fn new_fact(
 }
 
 /// Compose multiple facts into a single CTE query
-pub fn compose_facts(facts: List(Fact(context, event_type))) -> ComposedQuery {
+pub fn compose_facts(facts: List(Fact(context, event_type)), operation: QueryOperation) -> ComposedQuery {
   case facts {
     [] ->
       ComposedQuery(
@@ -87,15 +99,24 @@ pub fn compose_facts(facts: List(Fact(context, event_type))) -> ComposedQuery {
         list.map(cte_results, fn(result) { "SELECT * FROM " <> result.name })
         |> string.join(" UNION ALL ")
 
-      let final_sql =
-        "WITH "
-        <> cte_clauses
-        <> ", all_events AS ("
-        <> union_clause
-        <> ")"
-        <> " SELECT all_events.*, MAX(all_events.sequence_number) OVER () as max_sequence_number"
-        <> " FROM all_events"
-        <> " ORDER BY all_events.sequence_number"
+      let final_sql = case operation {
+        Read ->
+          "WITH "
+          <> cte_clauses
+          <> ", all_events AS ("
+          <> union_clause
+          <> ")"
+          <> " SELECT all_events.*, MAX(all_events.sequence_number) OVER () as max_sequence_number"
+          <> " FROM all_events"
+          <> " ORDER BY all_events.sequence_number"
+        AppendConsistencyCheck ->
+          "WITH "
+          <> cte_clauses
+          <> ", all_events AS ("
+          <> union_clause
+          <> ")"
+          <> " SELECT MAX(all_events.sequence_number) as max_sequence_number FROM all_events"
+      }
 
       ComposedQuery(sql: final_sql, params: all_params)
     }
@@ -122,7 +143,7 @@ pub fn query_event_log(
   initial_context: context,
   event_decoder: fn(String, Dynamic) -> Result(event_type, String),
 ) -> Result(context, String) {
-  let composed_query = compose_facts(facts)
+  let composed_query = compose_facts(facts, Read)
 
   let select_query =
     pog.query(composed_query.sql)
@@ -144,16 +165,27 @@ pub fn query_event_log(
                 Ok(event) -> Ok(#(row.fact_id, event))
                 Error(msg) -> Error(msg)
               }
-            Error(json_error) -> Error("JSON parse error: " <> string.inspect(json_error))
+            Error(json_error) ->
+              Error("JSON parse error: " <> string.inspect(json_error))
           }
         })
       {
         Ok(events) -> {
+          // Group events by fact_id while preserving sequence order
           let events_by_fact =
-            list.group(events, fn(pr) { pr.0 })
-            |> dict.map_values(fn(_k, pairs) {
-              list.map(pairs, fn(pr) { pr.1 })
+            list.index_map(facts, fn(_fact, index) {
+              let fact_id = "fact_" <> int.to_string(index + 1)
+              #(
+                fact_id,
+                list.filter_map(events, fn(pr) {
+                  case pr.0 == fact_id {
+                    True -> Ok(pr.1)
+                    _ -> Error(Nil)
+                  }
+                }),
+              )
             })
+            |> dict.from_list()
 
           let final_context =
             build_context(facts, events_by_fact, initial_context)
@@ -162,7 +194,109 @@ pub fn query_event_log(
         Error(msg) -> Error(msg)
       }
     }
-    Error(pog_error) -> Error("Database query failed: " <> string.inspect(pog_error))
+    Error(pog_error) ->
+      Error("Database query failed: " <> string.inspect(pog_error))
+  }
+}
+
+/// Append events to the log using facts for consistency checking
+pub fn append_events(
+  db: pog.Connection,
+  events: List(event_type),
+  event_converter: fn(event_type) -> #(String, json.Json),
+  metadata: dict.Dict(String, String),
+  consistency_facts: List(Fact(context, event_type)),
+  last_seen_sequence: Int,
+) -> Result(AppendResult, pog.QueryError) {
+  // Convert events to JSON array format
+  let events_json_array =
+    events
+    |> json.array(fn(event) {
+      let #(event_type, payload_json) = event_converter(event)
+      json.object([
+        #("type", json.string(event_type)),
+        #("data", payload_json),
+        #(
+          "metadata",
+          json.object(
+            dict.to_list(metadata)
+            |> list.map(fn(pair) { #(pair.0, json.string(pair.1)) }),
+          ),
+        ),
+      ])
+    })
+    |> json.to_string
+
+  // Build insert SQL with conflict detection
+  let insert_sql = case list.length(consistency_facts) {
+    0 -> {
+      // No consistency checking - simple insert
+      "WITH batch_insert AS (
+        INSERT INTO events (event_type, payload, metadata, occurred_at)
+        SELECT
+          (value->>'type')::text,
+          (value->>'data')::jsonb,
+          (value->>'metadata')::jsonb,
+          CURRENT_TIMESTAMP
+        FROM json_array_elements($1::json) AS value
+        RETURNING sequence_number
+      )
+      SELECT 'success' as status FROM batch_insert"
+    }
+    _ -> {
+      // Generate consistency check query using facts
+      let composed_query = compose_facts(consistency_facts, AppendConsistencyCheck)
+
+      "WITH consistency_check AS (" <> composed_query.sql <> "),
+       batch_insert AS (
+         INSERT INTO events (event_type, payload, metadata, occurred_at)
+         SELECT
+           (value->>'type')::text,
+           (value->>'data')::jsonb,
+           (value->>'metadata')::jsonb,
+           CURRENT_TIMESTAMP
+         FROM json_array_elements($" <> int.to_string(list.length(composed_query.params) + 2) <> "::json) AS value
+         WHERE COALESCE((SELECT MAX(max_sequence_number) FROM consistency_check), 0) <= $" <> int.to_string(list.length(composed_query.params) + 1) <> "
+         RETURNING sequence_number
+       ),
+       conflict_check AS (
+         SELECT
+           CASE
+             WHEN EXISTS (SELECT 1 FROM batch_insert) THEN 'success'
+             ELSE 'conflict'
+           END as status
+       )
+       SELECT status FROM conflict_check"
+    }
+  }
+
+  // Get parameters from composed query if we have consistency facts
+  let composed_params = case list.length(consistency_facts) {
+    0 -> []
+    _ -> {
+      let composed_query = compose_facts(consistency_facts, AppendConsistencyCheck)
+      composed_query.params
+    }
+  }
+
+  // Prepare parameters: composed query params + last_seen_sequence + events_json
+  let all_params = list.append(composed_params, [
+    pog.int(last_seen_sequence),
+    pog.text(events_json_array)
+  ])
+
+  let batch_query =
+    pog.query(insert_sql)
+    |> list.fold(all_params, _, fn(query, param) {
+      pog.parameter(query, param)
+    })
+    |> pog.returning(append_result_decoder())
+
+  use returned <- result.try(pog.execute(batch_query, on: db))
+  case returned.rows {
+    ["success"] -> Ok(AppendSuccess)
+    ["conflict"] -> Ok(AppendConflict)
+    _ -> Error(pog.UnexpectedResultType([]))
   }
 }
 
@@ -223,4 +357,10 @@ fn dynamic_query_decoder() -> decode.Decoder(RawEventRow) {
     metadata: metadata,
     max_sequence_number: max_sequence_number,
   ))
+}
+
+/// Decoder for append results
+fn append_result_decoder() -> decode.Decoder(String) {
+  use status <- decode.field(0, decode.string)
+  decode.success(status)
 }

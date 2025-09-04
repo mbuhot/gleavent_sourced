@@ -8,14 +8,14 @@ The strongly-typed composable facts system has been successfully implemented wit
 
 ### ✅ What's Working
 - **SQL Composition**: Multi-fact CTE generation with parameter offsetting
-- **Database Integration**: Real PostgreSQL operations with event decoding  
+- **Database Integration**: Real PostgreSQL operations with event decoding
 - **Complex SQL Support**: Subqueries, window functions, parameter type casting
 - **Performance**: Single query eliminates N+1 problems
 - **Type Safety**: Facts compose regardless of internal value types
 
-### 🔄 What's Remaining  
+### 🔄 What's Remaining
 - Migrate existing command handlers (`assign_ticket_handler`, `close_ticket_handler`)
-- Create convenience functions in `ticket_facts.gleam` 
+- Create convenience functions in `ticket_facts.gleam`
 - Remove deprecated modules (`event_filter.gleam`, `facts.gleam`)
 
 ### 🏗️ Architecture Achieved
@@ -26,7 +26,7 @@ let facts = [
   facts_v2.new_fact(sql: "SELECT * FROM events WHERE ...", params: [...], apply_events: ...),
 ]
 
-// Single database query with automatic CTE composition  
+// Single database query with automatic CTE composition
 facts_v2.query_event_log(db, facts, initial_context, event_decoder)
 // Returns: Updated context from all facts
 ```
@@ -289,7 +289,7 @@ pub fn team_workload_balance(
 ### ✅ COMPLETED: Core System (Phase 1)
 - [x] **Create `Fact` type and helper functions in new `facts_v2.gleam`**
   - ✅ `Fact(context, event_type)` type with embedded SQL and context update
-  - ✅ `new_fact()` constructor with auto-generated sequential IDs  
+  - ✅ `new_fact()` constructor with auto-generated sequential IDs
   - ✅ `compose_facts()` - robust SQL composition with CTE generation
   - ✅ `build_context()` - context building from query results
   - ✅ `query_event_log()` - full database query pipeline
@@ -313,13 +313,42 @@ pub fn team_workload_balance(
   - ✅ Complex SQL preservation (subqueries, CTEs)
   - ✅ **End-to-end database integration** (real events, real database)
 
-### 🔄 REMAINING: Application Integration (Phase 2)
-- [ ] Create strongly-typed `ticket_facts.gleam` helper functions
-- [ ] Update `command_handler.gleam` to support new fact-based approach  
+### ✅ COMPLETED: Phase 2A - Fact Helpers & Event Appending  
+- [x] **Create strongly-typed `ticket_facts_v2.gleam` helper functions**
+  - ✅ Helper functions: `query_by_type_and_id`, `fold_into` for code reuse
+  - ✅ All ticket facts: `exists`, `is_closed`, `current_assignee`, `priority`, `child_tickets`, `duplicate_status`, `all_child_tickets_closed`
+  - ✅ Proper event ordering maintained (prepend + reverse pattern)
+  - ✅ 4/4 tests passing with real database integration
+
+- [x] **Update `facts_v2.gleam` to support appending events with facts-based consistency**
+  - ✅ Added `QueryOperation` enum (`Read` vs `AppendConsistencyCheck`)
+  - ✅ `compose_facts()` generates different SQL based on operation type
+  - ✅ `append_events()` function with same API as event_log but uses facts for consistency
+  - ✅ Proper conflict detection without string manipulation
+  - ✅ 5/5 tests passing including append success/conflict scenarios
+
+### 🔄 REMAINING: Phase 2B - Command Handler Migration
+- [ ] Create `command_handler_v2.gleam` to support new fact-based approach  
 - [ ] Migrate `assign_ticket_handler` to new system
 - [ ] Migrate `close_ticket_handler` to new system
-- [ ] Remove deprecated `event_filter.gleam` module
-- [ ] Remove deprecated `facts.gleam` module
 - [ ] Update all calling code to use new fact types
+- [ ] Remove deprecated `event_filter.gleam`, `facts.gleam`, `event_log.gleam`, `command_handler.gleam` modules
+- [ ] Remove v2 suffixes from all modules and types
 
+### 📋 SESSION HANDOFF CONTEXT
 
+**Key Accomplishments This Session:**
+- Fixed critical event ordering bug in `facts_v2` (used inefficient `list.group` → custom fold with order preservation)
+- Implemented clean SQL generation without string manipulation (operation types instead of replace)
+- All event appending functionality working with proper conflict detection
+
+**Files Modified:**
+- `src/gleavent_sourced/customer_support/ticket_facts_v2.gleam` - Complete with helpers
+- `src/gleavent_sourced/facts_v2.gleam` - Added append_events, QueryOperation  
+- `test/gleavent_sourced/ticket_facts_v2_test.gleam` - 4 tests passing
+- `test/gleavent_sourced/facts_v2_test.gleam` - 5 tests passing (including append test)
+
+**Next Session Priority:**
+1. Create `command_handler_v2.gleam` module
+2. Migrate `assign_ticket_handler` to use `ticket_facts_v2` and `facts_v2.append_events`
+3. Ensure optimistic concurrency control works end-to-end
