@@ -1,5 +1,5 @@
 import gleam/dict
-import gleavent_sourced/command_handler.{CommandAccepted, CommandRejected}
+import gleavent_sourced/command_handler_v2.{CommandAccepted, CommandRejected}
 import gleavent_sourced/customer_support/ticket_command_router
 import gleavent_sourced/customer_support/ticket_commands
 import gleavent_sourced/customer_support/ticket_events
