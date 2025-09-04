@@ -25,7 +25,14 @@ fn create_test_metadata() {
 fn setup_initial_events(db, events) {
   let test_metadata = create_test_metadata()
   let assert Ok(_) =
-    facts_v2.append_events(db, events, ticket_events.encode, test_metadata, [], 0)
+    facts_v2.append_events(
+      db,
+      events,
+      ticket_events.encode,
+      test_metadata,
+      [],
+      0,
+    )
 }
 
 pub fn successful_assignment_creates_event_test() {
@@ -37,16 +44,21 @@ pub fn successful_assignment_creates_event_test() {
     let _ = setup_initial_events(db, initial_events)
 
     // Create command and handler
-    let command = AssignTicketCommand("T-100", "alice@example.com", "2024-01-01T10:00:00Z")
-    let handler = assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+    let command =
+      AssignTicketCommand("T-100", "alice@example.com", "2024-01-01T10:00:00Z")
+    let handler =
+      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
     let metadata = create_test_metadata()
 
     // Execute command
-    let assert Ok(result) = command_handler_v2.execute(db, handler, command, metadata)
+    let assert Ok(result) =
+      command_handler_v2.execute(db, handler, command, metadata)
 
     // Verify successful assignment
     let assert CommandAccepted(events) = result
-    let assert [TicketAssigned("T-100", "alice@example.com", "2024-01-01T10:00:00Z")] = events
+    let assert [
+      TicketAssigned("T-100", "alice@example.com", "2024-01-01T10:00:00Z"),
+    ] = events
   })
 }
 
@@ -60,12 +72,15 @@ pub fn assignment_to_already_assigned_ticket_fails_test() {
     let _ = setup_initial_events(db, initial_events)
 
     // Try to assign to different person
-    let command = AssignTicketCommand("T-101", "alice@example.com", "2024-01-01T10:00:00Z")
-    let handler = assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+    let command =
+      AssignTicketCommand("T-101", "alice@example.com", "2024-01-01T10:00:00Z")
+    let handler =
+      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
-    let assert Ok(result) = command_handler_v2.execute(db, handler, command, metadata)
+    let assert Ok(result) =
+      command_handler_v2.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -78,12 +93,15 @@ pub fn assignment_to_nonexistent_ticket_fails_test() {
     // No setup - ticket doesn't exist
 
     // Try to assign to non-existent ticket
-    let command = AssignTicketCommand("T-999", "alice@example.com", "2024-01-01T10:00:00Z")
-    let handler = assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+    let command =
+      AssignTicketCommand("T-999", "alice@example.com", "2024-01-01T10:00:00Z")
+    let handler =
+      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
-    let assert Ok(result) = command_handler_v2.execute(db, handler, command, metadata)
+    let assert Ok(result) =
+      command_handler_v2.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -97,17 +115,24 @@ pub fn assignment_to_closed_ticket_fails_test() {
     let initial_events = [
       TicketOpened("T-102", "Performance issue", "App is slow", "high"),
       TicketAssigned("T-102", "bob@example.com", "2024-01-01T09:00:00Z"),
-      TicketClosed("T-102", "Fixed performance bottleneck", "2024-01-01T11:00:00Z"),
+      TicketClosed(
+        "T-102",
+        "Fixed performance bottleneck",
+        "2024-01-01T11:00:00Z",
+      ),
     ]
     let _ = setup_initial_events(db, initial_events)
 
     // Try to assign closed ticket to different person
-    let command = AssignTicketCommand("T-102", "alice@example.com", "2024-01-01T12:00:00Z")
-    let handler = assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+    let command =
+      AssignTicketCommand("T-102", "alice@example.com", "2024-01-01T12:00:00Z")
+    let handler =
+      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
-    let assert Ok(result) = command_handler_v2.execute(db, handler, command, metadata)
+    let assert Ok(result) =
+      command_handler_v2.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -125,11 +150,13 @@ pub fn empty_assignee_validation_fails_test() {
 
     // Try to assign with empty assignee
     let command = AssignTicketCommand("T-103", "", "2024-01-01T10:00:00Z")
-    let handler = assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+    let handler =
+      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
-    let assert Ok(result) = command_handler_v2.execute(db, handler, command, metadata)
+    let assert Ok(result) =
+      command_handler_v2.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -141,17 +168,24 @@ pub fn empty_assigned_at_validation_fails_test() {
   test_runner.txn(fn(db) {
     // Setup: Create an unassigned ticket
     let initial_events = [
-      TicketOpened("T-104", "Security issue", "Potential vulnerability", "critical"),
+      TicketOpened(
+        "T-104",
+        "Security issue",
+        "Potential vulnerability",
+        "critical",
+      ),
     ]
     let _ = setup_initial_events(db, initial_events)
 
     // Try to assign with empty assigned_at timestamp
     let command = AssignTicketCommand("T-104", "alice@example.com", "")
-    let handler = assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+    let handler =
+      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
-    let assert Ok(result) = command_handler_v2.execute(db, handler, command, metadata)
+    let assert Ok(result) =
+      command_handler_v2.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result

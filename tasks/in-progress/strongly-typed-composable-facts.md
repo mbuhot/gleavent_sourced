@@ -2,21 +2,23 @@
 
 ## 🎯 Executive Summary
 
-**STATUS: COMMAND HANDLER V2 COMPLETE ✅**
+**STATUS: ALL HANDLERS MIGRATED ✅**
 
-The strongly-typed composable facts system and new command handler are successfully implemented with comprehensive testing including end-to-end database integration. All tests are passing.
+The strongly-typed composable facts system and ALL command handlers have been successfully migrated to v2 with comprehensive testing including end-to-end database integration. Critical parameter replacement bug fixed with regex. All 85 tests are passing.
 
 ### ✅ What's Working
-- **SQL Composition**: Multi-fact CTE generation with parameter offsetting
+- **All Handler Patterns**: Simple (no facts), standard (helper facts), custom SQL, dynamic facts
+- **SQL Composition**: Multi-fact CTE generation with REGEX-BASED parameter offsetting
 - **Database Integration**: Real PostgreSQL operations with event decoding
 - **Complex SQL Support**: Subqueries, window functions, parameter type casting
 - **Performance**: Single query eliminates N+1 problems
 - **Type Safety**: Facts compose regardless of internal value types
 - **Command Handler V2**: Simplified metadata handling, automatic retry on conflicts, optimistic concurrency control
+- **Critical Bug Fix**: Parameter replacement using gleam_regexp prevents $1→$10 corruption
 
-### 🔄 What's Remaining
-- Migrate existing command handlers (`assign_ticket_handler`, `close_ticket_handler`) to new system
-- Remove deprecated modules (`command_handler.gleam`, `event_filter.gleam`, `facts.gleam`, `event_log.gleam`)
+### 🔄 What's Remaining (Cleanup Phase)
+- Update calling code (ticket_command_router) to use new v2 handlers
+- Remove deprecated v1 modules (`command_handler.gleam`, `event_filter.gleam`, `facts.gleam`, `event_log.gleam`)
 - Remove v2 suffixes from all modules and types (final cleanup)
 
 ### 🏗️ Architecture Achieved
@@ -296,7 +298,7 @@ pub fn team_workload_balance(
 
 ## Task Breakdown
 
-### ✅ COMPLETED: Core System (Phase 1)
+### ✅ COMPLETED: All Handler Migrations (Phases 1-2C)
 - [x] **Create `Fact` type and helper functions in new `facts_v2.gleam`**
   - ✅ `Fact(context, event_type)` type with embedded SQL and context update
   - ✅ `new_fact()` constructor with auto-generated sequential IDs
@@ -323,7 +325,7 @@ pub fn team_workload_balance(
   - ✅ Complex SQL preservation (subqueries, CTEs)
   - ✅ **End-to-end database integration** (real events, real database)
 
-### ✅ COMPLETED: Phase 2A - Fact Helpers & Event Appending  
+### ✅ COMPLETED: Phase 2A - Fact Helpers & Event Appending (DONE)
 - [x] **Create strongly-typed `ticket_facts_v2.gleam` helper functions**
   - ✅ Helper functions: `query_by_type_and_id`, `fold_into` for code reuse
   - ✅ All ticket facts: `exists`, `is_closed`, `current_assignee`, `priority`, `child_tickets`, `duplicate_status`, `all_child_tickets_closed`
@@ -337,7 +339,7 @@ pub fn team_workload_balance(
   - ✅ Proper conflict detection without string manipulation
   - ✅ 5/5 tests passing including append success/conflict scenarios
 
-### ✅ COMPLETED: Phase 2B - Command Handler V2 Implementation
+### ✅ COMPLETED: Phase 2B - Command Handler V2 Implementation (DONE)
 - [x] **Create `command_handler_v2.gleam` with simplified metadata design**
   - ✅ Removed complex `metadata_generator` functions - metadata provided by system at execution time
   - ✅ Higher-level API: `new(initial_context, facts, execute, event_decoder, event_encoder)`
@@ -350,28 +352,46 @@ pub fn team_workload_balance(
   - ✅ Fixed parameter mismatch when using empty consistency facts list
   - ✅ Proper SQL parameter handling for both simple and consistency-check cases
 
-### 🔄 REMAINING: Phase 2C - Migration & Cleanup
-- [ ] Migrate `assign_ticket_handler` to use `command_handler_v2`
-- [ ] Migrate `close_ticket_handler` to use `command_handler_v2` 
-- [ ] Update all calling code to use new command handler
-- [ ] Remove deprecated `command_handler.gleam`, `event_filter.gleam`, `facts.gleam`, `event_log.gleam` modules
+### ✅ COMPLETED: Phase 2C - All Handler Migrations
+- [x] **Migrate `assign_ticket_handler_v2`** ✅ (standard facts pattern)
+- [x] **Migrate `close_ticket_handler_v2`** ✅ (custom SQL optimization) 
+- [x] **Migrate `open_ticket_handler_v2`** ✅ (simplest case - no facts)
+- [x] **Migrate `mark_duplicate_handler_v2`** ✅ (multi-ticket validation + self-reference prevention)
+- [x] **Migrate `bulk_assign_handler_v2`** ✅ (most complex - dynamic facts + critical bug fix)
+
+### 🔄 REMAINING: Phase 3 - Final Cleanup & Integration
+- [ ] Update all calling code (ticket_command_router) to use new v2 handlers
+- [ ] Remove deprecated v1 modules (`command_handler.gleam`, `event_filter.gleam`, `facts.gleam`, `event_log.gleam`)
 - [ ] Remove v2 suffixes from all modules and types (final cleanup)
 
-### 📋 SESSION HANDOFF CONTEXT
+### 📋 FINAL SESSION HANDOFF CONTEXT
 
-**Key Accomplishments This Session:**
-- ✅ Implemented complete `command_handler_v2.gleam` with simplified metadata design
-- ✅ Fixed critical parameter handling bug in `facts_v2.append_events` for empty consistency facts
-- ✅ Added `query_event_log_with_sequence` to return both context and max sequence number
-- ✅ Streamlined test suite from 7 to 4 focused behavioral tests (removed redundant/low-value tests)
-- ✅ Comprehensive testing: command rejection, success+persistence, metadata integration, conflict retry
+**🎉 MIGRATION COMPLETE - Key Accomplishments:**
+- ✅ **ALL 5 HANDLERS MIGRATED** to command_handler_v2 with comprehensive patterns demonstrated
+- ✅ **CRITICAL BUG FIXED** - Parameter replacement now uses gleam_regexp to prevent $1→$10 corruption  
+- ✅ **85 TESTS PASSING** - Complete test coverage for all handler types and edge cases
+- ✅ **REGEX IMPLEMENTATION** - Precise `\$(\d+)` pattern matching for safe parameter offsetting
+- ✅ **ALL PATTERNS DEMONSTRATED**: Simple (no facts), standard, custom SQL, dynamic facts, advanced validation
 
-**Files Modified:**
-- `src/gleavent_sourced/command_handler_v2.gleam` - Complete implementation with metadata simplification
-- `src/gleavent_sourced/facts_v2.gleam` - Fixed append_events parameter handling + added query_event_log_with_sequence
-- `test/gleavent_sourced/command_handler_v2_test.gleam` - 4 streamlined behavioral tests passing
+**🔧 CRITICAL REGEX BUG FIX:**
+- **Problem**: `string.replace("$1", "$5")` corrupted `$10 → $50` 
+- **Solution**: Added `gleam_regexp` dependency with `\$(\d+)` regex pattern
+- **Impact**: Safe parameter replacement for complex multi-fact queries
 
-**Next Session Priority:**
-1. Migrate `assign_ticket_handler` to use `command_handler_v2` 
-2. Migrate `close_ticket_handler` to use `command_handler_v2`
-3. Remove deprecated modules and v2 suffixes
+**📊 Handler Migration Summary:**
+- `open_ticket_handler_v2` ✅ - Simplest (no facts, pure validation)
+- `assign_ticket_handler_v2` ✅ - Standard pattern with helper facts  
+- `mark_duplicate_handler_v2` ✅ - Multi-ticket validation + self-reference prevention
+- `close_ticket_handler_v2` ✅ - Custom SQL optimization using sql.gleam
+- `bulk_assign_handler_v2` ✅ - Most complex with dynamic fact generation
+
+**📁 Files Created:**
+- 5 new v2 handler files with comprehensive test suites
+- All demonstrate different aspects of the v2 facts system
+- Total: 40 new tests added (45→85 total)
+
+**🔄 Next Session Priority (Cleanup Phase):**
+1. Update `ticket_command_router` to use v2 handlers
+2. Remove v1 modules (`command_handler.gleam`, `event_filter.gleam`, `facts.gleam`, `event_log.gleam`)
+3. Remove v2 suffixes and finalize API
+4. **Core migration is COMPLETE** ✅

@@ -140,7 +140,11 @@ pub fn all_child_tickets_closed(
   update_context: fn(context, Bool) -> context,
 ) -> facts_v2.Fact(context, TicketEvent) {
   facts_v2.new_fact(
-    sql: "SELECT * FROM events e WHERE (e.event_type = 'TicketParentLinked' AND e.payload @> jsonb_build_object('parent_ticket_id', $1::text)) OR (e.event_type = 'TicketClosed' AND e.payload->>'ticket_id' IN (SELECT linked.payload->>'ticket_id' FROM events linked WHERE linked.event_type = 'TicketParentLinked' AND linked.payload @> jsonb_build_object('parent_ticket_id', $1::text)))",
+    sql: "SELECT * FROM events e "
+      <> "WHERE (e.event_type = 'TicketParentLinked' AND e.payload @> jsonb_build_object('parent_ticket_id', $1::text)) "
+      <> "OR (e.event_type = 'TicketClosed' AND e.payload->>'ticket_id' IN "
+      <> "(SELECT linked.payload->>'ticket_id' FROM events linked WHERE linked.event_type = 'TicketParentLinked' AND "
+      <> "linked.payload @> jsonb_build_object('parent_ticket_id', $1::text)))",
     params: [pog.text(parent_ticket_id)],
     apply_events: fn(context, events) {
       let child_ids =

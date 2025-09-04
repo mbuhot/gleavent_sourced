@@ -33,12 +33,18 @@ fn facts(original_ticket_id: String, duplicate_ticket_id: String) {
     ticket_facts_v2.exists(original_ticket_id, fn(ctx, original_ticket_exists) {
       MarkDuplicateContext(..ctx, original_ticket_exists:)
     }),
-    ticket_facts_v2.is_closed(original_ticket_id, fn(ctx, original_ticket_closed) {
-      MarkDuplicateContext(..ctx, original_ticket_closed:)
-    }),
-    ticket_facts_v2.exists(duplicate_ticket_id, fn(ctx, duplicate_ticket_exists) {
-      MarkDuplicateContext(..ctx, duplicate_ticket_exists:)
-    }),
+    ticket_facts_v2.is_closed(
+      original_ticket_id,
+      fn(ctx, original_ticket_closed) {
+        MarkDuplicateContext(..ctx, original_ticket_closed:)
+      },
+    ),
+    ticket_facts_v2.exists(
+      duplicate_ticket_id,
+      fn(ctx, duplicate_ticket_exists) {
+        MarkDuplicateContext(..ctx, duplicate_ticket_exists:)
+      },
+    ),
     ticket_facts_v2.duplicate_status(
       duplicate_ticket_id,
       fn(ctx, duplicate_ticket_status) {
@@ -110,9 +116,7 @@ fn duplicate_ticket_exists(
 }
 
 // Prevents marking a ticket as duplicate of itself
-fn not_self_reference(
-  command: MarkDuplicateCommand,
-) -> Result(Nil, TicketError) {
+fn not_self_reference(command: MarkDuplicateCommand) -> Result(Nil, TicketError) {
   require(
     command.duplicate_ticket_id != command.original_ticket_id,
     BusinessRuleViolation("Ticket cannot be marked as duplicate of itself"),

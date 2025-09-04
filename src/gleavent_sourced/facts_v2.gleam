@@ -4,6 +4,8 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
+import gleam/option.{Some}
+import gleam/regexp
 import gleam/result
 import gleam/string
 import pog
@@ -357,17 +359,23 @@ fn adjust_parameter_indices(
   case offset {
     0 -> sql
     _ -> {
-      // Process parameters in descending order to avoid infinite loops
-      // Generate list from param_count down to 1
-      let param_numbers = list.range(1, param_count) |> list.reverse()
-      list.fold(param_numbers, sql, fn(acc_sql, param_num) {
-        let param_pattern = "$" <> int.to_string(param_num)
-        case string.contains(acc_sql, param_pattern) {
-          True -> {
-            let new_param = "$" <> int.to_string(param_num + offset)
-            string.replace(acc_sql, param_pattern, new_param)
+      // Use regex to match $n parameters ($ followed by digits)
+      let assert Ok(param_regex) = regexp.from_string("\\$(\\d+)")
+
+      regexp.match_map(param_regex, sql, fn(match) {
+        // Extract the parameter number from the first submatch
+        case match.submatches {
+          [Some(param_num_str)] -> {
+            case int.parse(param_num_str) {
+              Ok(param_num) if param_num >= 1 && param_num <= param_count -> {
+                "$" <> int.to_string(param_num + offset)
+              }
+              _ -> match.content
+              // Return original if parsing fails or out of range
+            }
           }
-          False -> acc_sql
+          _ -> match.content
+          // Return original if no submatch
         }
       })
     }

@@ -16,6 +16,7 @@ version = "1.0.0"
 gleam_stdlib = ">= 0.44.0 and < 2.0.0"
 gleam_otp = ">= 1.1.0 and < 2.0.0"
 gleam_json = ">= 3.0.2 and < 4.0.0"
+gleam_regexp = ">= 1.0.0 and < 2.0.0"
 parrot = { git = "https://github.com/mbuhot/parrot", ref = "a776acb" }
 cigogne = ">= 4.0.2 and < 5.0.0"
 pog = ">= 4.0.0 and < 5.0.0"

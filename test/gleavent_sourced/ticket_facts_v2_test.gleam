@@ -8,7 +8,6 @@ import gleavent_sourced/event_log
 import gleavent_sourced/facts_v2
 import gleavent_sourced/test_runner
 
-
 pub fn main() {
   test_runner.run_eunit(["gleavent_sourced/ticket_facts_v2_test"])
 }

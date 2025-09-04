@@ -41,12 +41,15 @@ fn initial_context(ticket_id: String) {
 
 // Custom optimized fact using the sophisticated SQL from sql.gleam
 // This single query efficiently loads all parent and child ticket events
-fn ticket_close_fact(ticket_id: String) -> facts_v2.Fact(TicketCloseContext, TicketEvent) {
+fn ticket_close_fact(
+  ticket_id: String,
+) -> facts_v2.Fact(TicketCloseContext, TicketEvent) {
   // Get the optimized SQL query that loads parent + child events in one query
-  let #(sql_query, params, _decoder) = sql.ticket_closed_events(
-    fact_id: "ticket_close_context",
-    ticket_id: ticket_id,
-  )
+  let #(sql_query, params, _decoder) =
+    sql.ticket_closed_events(
+      fact_id: "ticket_close_context",
+      ticket_id: ticket_id,
+    )
 
   // Convert parrot params to pog params
   let pog_params = list.map(params, parrot_pog.parrot_to_pog)
@@ -63,19 +66,24 @@ fn ticket_close_fact(ticket_id: String) -> facts_v2.Fact(TicketCloseContext, Tic
 
 // Process each event to build the comprehensive context
 // Handles parent ticket state + child ticket tracking
-fn process_event_for_context(context: TicketCloseContext, event: TicketEvent) -> TicketCloseContext {
+fn process_event_for_context(
+  context: TicketCloseContext,
+  event: TicketEvent,
+) -> TicketCloseContext {
   case event {
     // Parent ticket opened - establishes existence and priority
-    ticket_events.TicketOpened(ticket_id: id, priority: p, ..) if id == context.ticket_id ->
-      TicketCloseContext(..context, exists: True, priority: Some(p))
+    ticket_events.TicketOpened(ticket_id: id, priority: p, ..)
+      if id == context.ticket_id
+    -> TicketCloseContext(..context, exists: True, priority: Some(p))
 
     // Child ticket opened - track as open child
     ticket_events.TicketOpened(ticket_id: id, ..) ->
       TicketCloseContext(..context, open_children: [id, ..context.open_children])
 
     // Parent ticket assigned - track current assignee
-    ticket_events.TicketAssigned(ticket_id: id, assignee: a, ..) if id == context.ticket_id ->
-      TicketCloseContext(..context, current_assignee: Some(a))
+    ticket_events.TicketAssigned(ticket_id: id, assignee: a, ..)
+      if id == context.ticket_id
+    -> TicketCloseContext(..context, current_assignee: Some(a))
 
     ticket_events.TicketAssigned(..) -> context
 
@@ -87,12 +95,22 @@ fn process_event_for_context(context: TicketCloseContext, event: TicketEvent) ->
     ticket_events.TicketClosed(ticket_id: id, ..) ->
       TicketCloseContext(
         ..context,
-        open_children: list.filter(context.open_children, fn(child_id) { child_id != id }),
+        open_children: list.filter(context.open_children, fn(child_id) {
+          child_id != id
+        }),
       )
 
     // Child linked to parent - track linked children
-    ticket_events.TicketParentLinked(ticket_id: child_id, parent_ticket_id: parent_id) if parent_id == context.ticket_id ->
-      TicketCloseContext(..context, linked_children: [child_id, ..context.linked_children])
+    ticket_events.TicketParentLinked(
+      ticket_id: child_id,
+      parent_ticket_id: parent_id,
+    )
+      if parent_id == context.ticket_id
+    ->
+      TicketCloseContext(..context, linked_children: [
+        child_id,
+        ..context.linked_children
+      ])
 
     _ -> context
   }
@@ -129,7 +147,11 @@ fn execute(
   use _ <- validate(resolution_detail(_, command.resolution), context)
   use _ <- validate(closed_at, command.closed_at)
   Ok([
-    ticket_events.TicketClosed(command.ticket_id, command.resolution, command.closed_at),
+    ticket_events.TicketClosed(
+      command.ticket_id,
+      command.resolution,
+      command.closed_at,
+    ),
   ])
 }
 
