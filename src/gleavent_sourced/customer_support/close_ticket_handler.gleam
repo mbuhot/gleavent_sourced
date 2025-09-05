@@ -2,12 +2,12 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 
-import gleavent_sourced/command_handler_v2.{type CommandHandlerV2}
+import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type CloseTicketCommand, type TicketError, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
-import gleavent_sourced/facts_v2
+import gleavent_sourced/facts
 import gleavent_sourced/parrot_pog
 import gleavent_sourced/sql
 import gleavent_sourced/validation.{require, validate}
@@ -43,7 +43,7 @@ fn initial_context(ticket_id: String) {
 // This single query efficiently loads all parent and child ticket events
 fn ticket_close_fact(
   ticket_id: String,
-) -> facts_v2.Fact(TicketCloseContext, TicketEvent) {
+) -> facts.Fact(TicketCloseContext, TicketEvent) {
   // Get the optimized SQL query that loads parent + child events in one query
   let #(sql_query, params, _decoder) =
     sql.ticket_closed_events(
@@ -54,7 +54,7 @@ fn ticket_close_fact(
   // Convert parrot params to pog params
   let pog_params = list.map(params, parrot_pog.parrot_to_pog)
 
-  facts_v2.new_fact(
+  facts.new_fact(
     sql: sql_query,
     params: pog_params,
     apply_events: fn(context, events) {
@@ -118,15 +118,15 @@ fn process_event_for_context(
 
 // Creates command handler with custom optimized SQL fact
 // Single query loads all necessary parent + child ticket data
-pub fn create_close_ticket_handler_v2(
+pub fn create_close_ticket_handler(
   command: CloseTicketCommand,
-) -> CommandHandlerV2(
+) -> CommandHandler(
   CloseTicketCommand,
   TicketEvent,
   TicketCloseContext,
   TicketError,
 ) {
-  command_handler_v2.new(
+  command_handler.new(
     initial_context(command.ticket_id),
     [ticket_close_fact(command.ticket_id)],
     execute,

@@ -3,12 +3,12 @@ import gleam/dynamic.{type Dynamic}
 import gleam/json
 import gleam/result
 import gleam/string
-import gleavent_sourced/facts_v2.{type Fact}
+import gleavent_sourced/facts.{type Fact}
 import pog
 
 // Simplified command handler using the new facts system
-pub type CommandHandlerV2(command, event, context, error) {
-  CommandHandlerV2(
+pub type CommandHandler(command, event, context, error) {
+  CommandHandler(
     initial_context: context,
     facts: List(Fact(context, event)),
     execute: fn(command, context) -> Result(List(event), error),
@@ -31,8 +31,8 @@ pub fn new(
   execute: fn(command, context) -> Result(List(event), error),
   event_decoder: fn(String, Dynamic) -> Result(event, String),
   event_encoder: fn(event) -> #(String, json.Json),
-) -> CommandHandlerV2(command, event, context, error) {
-  CommandHandlerV2(
+) -> CommandHandler(command, event, context, error) {
+  CommandHandler(
     initial_context: initial_context,
     facts: facts,
     execute: execute,
@@ -44,7 +44,7 @@ pub fn new(
 // Execute command with automatic retry on conflicts
 pub fn execute(
   db: pog.Connection,
-  handler: CommandHandlerV2(command, event, context, error),
+  handler: CommandHandler(command, event, context, error),
   command: command,
   metadata: dict.Dict(String, String),
 ) -> Result(CommandResult(event, error), String) {
@@ -54,14 +54,14 @@ pub fn execute(
 // Execute with custom retry count
 pub fn execute_with_retries(
   db: pog.Connection,
-  handler: CommandHandlerV2(command, event, context, error),
+  handler: CommandHandler(command, event, context, error),
   command: command,
   metadata: dict.Dict(String, String),
   retries_left: Int,
 ) -> Result(CommandResult(event, error), String) {
   // Load context using facts
   use #(context, max_sequence) <- result.try(
-    facts_v2.query_event_log_with_sequence(
+    facts.query_event_log_with_sequence(
       db,
       handler.facts,
       handler.initial_context,
@@ -87,8 +87,8 @@ pub fn execute_with_retries(
       ))
 
       case append_result {
-        facts_v2.AppendSuccess -> Ok(CommandAccepted(events))
-        facts_v2.AppendConflict -> {
+        facts.AppendSuccess -> Ok(CommandAccepted(events))
+        facts.AppendConflict -> {
           case retries_left {
             0 -> Error("Maximum retries exceeded due to conflicts")
             _ ->
@@ -109,14 +109,14 @@ pub fn execute_with_retries(
 // Helper to append events with conflict detection
 fn append_events_with_consistency_check(
   db: pog.Connection,
-  handler: CommandHandlerV2(command, event, context, error),
+  handler: CommandHandler(command, event, context, error),
   _command: command,
   _context: context,
   events: List(event),
   metadata: dict.Dict(String, String),
   max_sequence: Int,
-) -> Result(facts_v2.AppendResult, String) {
-  facts_v2.append_events(
+) -> Result(facts.AppendResult, String) {
+  facts.append_events(
     db,
     events,
     handler.event_encoder,

@@ -3,12 +3,12 @@ import gleam/list
 import gleam/option
 import gleam/string
 
-import gleavent_sourced/command_handler_v2.{type CommandHandlerV2}
+import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type BulkAssignCommand, type TicketError, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
-import gleavent_sourced/customer_support/ticket_facts_v2
+import gleavent_sourced/customer_support/ticket_facts
 import gleavent_sourced/validation.{require, validate}
 
 // Context for bulk assignment containing validation state for all tickets
@@ -49,15 +49,15 @@ fn update_ticket(
 fn facts(ticket_ids: List(String)) {
   use ticket_id <- list.flat_map(ticket_ids)
   [
-    ticket_facts_v2.exists(ticket_id, fn(ctx: BulkAssignContext, exists) {
+    ticket_facts.exists(ticket_id, fn(ctx: BulkAssignContext, exists) {
       use state <- update_ticket(ctx, ticket_id)
       TicketState(..state, exists:)
     }),
-    ticket_facts_v2.is_closed(ticket_id, fn(ctx: BulkAssignContext, is_closed) {
+    ticket_facts.is_closed(ticket_id, fn(ctx: BulkAssignContext, is_closed) {
       use state <- update_ticket(ctx, ticket_id)
       TicketState(..state, is_closed:)
     }),
-    ticket_facts_v2.current_assignee(
+    ticket_facts.current_assignee(
       ticket_id,
       fn(ctx: BulkAssignContext, current_assignee_opt) {
         let current_assignee = current_assignee_opt |> option.unwrap("")
@@ -70,15 +70,15 @@ fn facts(ticket_ids: List(String)) {
 
 // Creates command handler for bulk assignment with dynamic fact generation
 // Generates facts for each ticket in the bulk assignment list
-pub fn create_bulk_assign_handler_v2(
+pub fn create_bulk_assign_handler(
   command: BulkAssignCommand,
-) -> CommandHandlerV2(
+) -> CommandHandler(
   BulkAssignCommand,
   TicketEvent,
   BulkAssignContext,
   TicketError,
 ) {
-  command_handler_v2.new(
+  command_handler.new(
     initial_context(),
     facts(command.ticket_ids),
     execute,

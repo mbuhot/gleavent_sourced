@@ -2,8 +2,8 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
-import gleavent_sourced/command_handler_v2.{CommandAccepted, CommandRejected}
-import gleavent_sourced/customer_support/open_ticket_handler_v2
+import gleavent_sourced/command_handler.{CommandAccepted, CommandRejected}
+import gleavent_sourced/customer_support/open_ticket_handler
 import gleavent_sourced/customer_support/ticket_commands.{
   OpenTicketCommand, ValidationError,
 }
@@ -32,12 +32,12 @@ pub fn successful_ticket_creation_test() {
         "high",
         parent_ticket_id: None,
       )
-    let handler = open_ticket_handler_v2.create_open_ticket_handler_v2()
+    let handler = open_ticket_handler.create_open_ticket_handler()
     let metadata = create_test_metadata()
 
     // Execute command - should succeed
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify successful creation
     let assert CommandAccepted(events) = result
@@ -64,12 +64,12 @@ pub fn empty_ticket_id_validation_fails_test() {
         "medium",
         parent_ticket_id: None,
       )
-    let handler = open_ticket_handler_v2.create_open_ticket_handler_v2()
+    let handler = open_ticket_handler.create_open_ticket_handler()
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(ValidationError(message)) = result
@@ -89,12 +89,12 @@ pub fn empty_title_validation_fails_test() {
         "low",
         parent_ticket_id: None,
       )
-    let handler = open_ticket_handler_v2.create_open_ticket_handler_v2()
+    let handler = open_ticket_handler.create_open_ticket_handler()
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(ValidationError(message)) = result
@@ -116,12 +116,12 @@ pub fn title_too_long_validation_fails_test() {
         "critical",
         parent_ticket_id: None,
       )
-    let handler = open_ticket_handler_v2.create_open_ticket_handler_v2()
+    let handler = open_ticket_handler.create_open_ticket_handler()
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(ValidationError(message)) = result
@@ -141,12 +141,12 @@ pub fn invalid_priority_validation_fails_test() {
         // Invalid priority - not in allowed list
         parent_ticket_id: None,
       )
-    let handler = open_ticket_handler_v2.create_open_ticket_handler_v2()
+    let handler = open_ticket_handler.create_open_ticket_handler()
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(ValidationError(message)) = result
@@ -171,11 +171,11 @@ pub fn all_valid_priorities_succeed_test() {
             priority,
             parent_ticket_id: None,
           )
-        let handler = open_ticket_handler_v2.create_open_ticket_handler_v2()
+        let handler = open_ticket_handler.create_open_ticket_handler()
 
         // Execute command - should succeed for all valid priorities
         let assert Ok(result) =
-          command_handler_v2.execute(db, handler, command, metadata)
+          command_handler.execute(db, handler, command, metadata)
         let assert CommandAccepted(events) = result
         let assert [TicketOpened(ticket_id_result, _, _, priority_result)] =
           events

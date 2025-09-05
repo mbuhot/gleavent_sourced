@@ -1,9 +1,9 @@
-import gleavent_sourced/command_handler_v2.{type CommandHandlerV2}
+import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type MarkDuplicateCommand, type TicketError, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
-import gleavent_sourced/customer_support/ticket_facts_v2
+import gleavent_sourced/customer_support/ticket_facts
 import gleavent_sourced/validation.{require, validate}
 
 // Context built from facts to validate duplicate marking business rules
@@ -13,7 +13,7 @@ pub type MarkDuplicateContext {
     original_ticket_exists: Bool,
     original_ticket_closed: Bool,
     duplicate_ticket_exists: Bool,
-    duplicate_ticket_status: ticket_facts_v2.DuplicateStatus,
+    duplicate_ticket_status: ticket_facts.DuplicateStatus,
   )
 }
 
@@ -23,29 +23,29 @@ fn initial_context() {
     original_ticket_exists: False,
     original_ticket_closed: False,
     duplicate_ticket_exists: False,
-    duplicate_ticket_status: ticket_facts_v2.Unique,
+    duplicate_ticket_status: ticket_facts.Unique,
   )
 }
 
 // Define facts needed to validate both tickets in the duplicate relationship
 fn facts(original_ticket_id: String, duplicate_ticket_id: String) {
   [
-    ticket_facts_v2.exists(original_ticket_id, fn(ctx, original_ticket_exists) {
+    ticket_facts.exists(original_ticket_id, fn(ctx, original_ticket_exists) {
       MarkDuplicateContext(..ctx, original_ticket_exists:)
     }),
-    ticket_facts_v2.is_closed(
+    ticket_facts.is_closed(
       original_ticket_id,
       fn(ctx, original_ticket_closed) {
         MarkDuplicateContext(..ctx, original_ticket_closed:)
       },
     ),
-    ticket_facts_v2.exists(
+    ticket_facts.exists(
       duplicate_ticket_id,
       fn(ctx, duplicate_ticket_exists) {
         MarkDuplicateContext(..ctx, duplicate_ticket_exists:)
       },
     ),
-    ticket_facts_v2.duplicate_status(
+    ticket_facts.duplicate_status(
       duplicate_ticket_id,
       fn(ctx, duplicate_ticket_status) {
         MarkDuplicateContext(..ctx, duplicate_ticket_status:)
@@ -56,15 +56,15 @@ fn facts(original_ticket_id: String, duplicate_ticket_id: String) {
 
 // Creates command handler with facts to validate both tickets before marking duplicate
 // Uses strongly-typed facts system for efficient multi-ticket validation
-pub fn create_mark_duplicate_handler_v2(
+pub fn create_mark_duplicate_handler(
   command: MarkDuplicateCommand,
-) -> CommandHandlerV2(
+) -> CommandHandler(
   MarkDuplicateCommand,
   TicketEvent,
   MarkDuplicateContext,
   TicketError,
 ) {
-  command_handler_v2.new(
+  command_handler.new(
     initial_context(),
     facts(command.original_ticket_id, command.duplicate_ticket_id),
     execute,
@@ -128,7 +128,7 @@ fn not_already_duplicate(
   context: MarkDuplicateContext,
 ) -> Result(Nil, TicketError) {
   case context.duplicate_ticket_status {
-    ticket_facts_v2.DuplicateOf(_) ->
+    ticket_facts.DuplicateOf(_) ->
       Error(BusinessRuleViolation("Ticket is already marked as duplicate"))
     _ -> Ok(Nil)
   }

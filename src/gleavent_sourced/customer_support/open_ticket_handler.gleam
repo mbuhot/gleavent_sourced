@@ -1,7 +1,7 @@
 import gleam/result
 import gleam/string
 
-import gleavent_sourced/command_handler_v2.{type CommandHandlerV2}
+import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type OpenTicketCommand, type TicketError, ValidationError,
 }
@@ -12,13 +12,13 @@ import gleavent_sourced/validation.{require, validate}
 
 // Creates command handler for opening tickets - no facts needed since this creates new tickets
 // Uses empty facts list since no existing state needs to be loaded
-pub fn create_open_ticket_handler_v2() -> CommandHandlerV2(
+pub fn create_open_ticket_handler() -> CommandHandler(
   OpenTicketCommand,
   TicketEvent,
   Nil,
   TicketError,
 ) {
-  command_handler_v2.new(
+  command_handler.new(
     Nil,
     // No context needed for ticket creation
     [],

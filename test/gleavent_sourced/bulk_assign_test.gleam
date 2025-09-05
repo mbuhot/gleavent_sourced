@@ -1,10 +1,10 @@
 import gleam/dict
 import gleam/list
-import gleavent_sourced/command_handler_v2.{CommandAccepted, CommandRejected}
+import gleavent_sourced/command_handler.{CommandAccepted, CommandRejected}
 import gleavent_sourced/customer_support/ticket_command_router
 import gleavent_sourced/customer_support/ticket_commands
 import gleavent_sourced/customer_support/ticket_events
-import gleavent_sourced/facts_v2
+import gleavent_sourced/facts
 import gleavent_sourced/test_runner
 
 pub fn main() {
@@ -52,8 +52,8 @@ pub fn bulk_assign_multiple_tickets_test() {
     let test_metadata = create_test_metadata()
 
     // Store initial ticket events
-    let assert Ok(facts_v2.AppendSuccess) =
-      facts_v2.append_events(
+    let assert Ok(facts.AppendSuccess) =
+      facts.append_events(
         db,
         initial_events,
         ticket_events.encode,
@@ -120,8 +120,8 @@ pub fn bulk_assign_with_nonexistent_ticket_rejected_test() {
     let test_metadata = create_test_metadata()
 
     // Store initial ticket events
-    let assert Ok(facts_v2.AppendSuccess) =
-      facts_v2.append_events(
+    let assert Ok(facts.AppendSuccess) =
+      facts.append_events(
         db,
         initial_events,
         ticket_events.encode,
@@ -190,8 +190,8 @@ pub fn bulk_assign_with_closed_tickets_rejected_test() {
     let test_metadata = create_test_metadata()
 
     // Store initial ticket events
-    let assert Ok(facts_v2.AppendSuccess) =
-      facts_v2.append_events(
+    let assert Ok(facts.AppendSuccess) =
+      facts.append_events(
         db,
         initial_events,
         ticket_events.encode,
@@ -231,8 +231,8 @@ pub fn bulk_assign_with_empty_assignee_rejected_test() {
     let test_metadata = create_test_metadata()
 
     // Store initial ticket events
-    let assert Ok(facts_v2.AppendSuccess) =
-      facts_v2.append_events(
+    let assert Ok(facts.AppendSuccess) =
+      facts.append_events(
         db,
         initial_events,
         ticket_events.encode,
@@ -288,8 +288,8 @@ pub fn bulk_assign_with_multiple_validation_failures_test() {
     let test_metadata = create_test_metadata()
 
     // Store initial ticket events
-    let assert Ok(facts_v2.AppendSuccess) =
-      facts_v2.append_events(
+    let assert Ok(facts.AppendSuccess) =
+      facts.append_events(
         db,
         initial_events,
         ticket_events.encode,

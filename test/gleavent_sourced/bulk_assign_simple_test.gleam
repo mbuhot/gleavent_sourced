@@ -1,14 +1,14 @@
 import gleam/dict
 import gleam/list
-import gleavent_sourced/command_handler_v2.{CommandAccepted}
-import gleavent_sourced/customer_support/bulk_assign_handler_v2
+import gleavent_sourced/command_handler.{CommandAccepted}
+import gleavent_sourced/customer_support/bulk_assign_handler
 import gleavent_sourced/customer_support/ticket_commands.{
   BulkAssignCommand,
 }
 import gleavent_sourced/customer_support/ticket_events.{
   TicketAssigned, TicketOpened,
 }
-import gleavent_sourced/facts_v2
+import gleavent_sourced/facts
 import gleavent_sourced/test_runner
 
 pub fn main() {
@@ -26,7 +26,7 @@ fn create_test_metadata() {
 fn setup_initial_events(db, events) {
   let test_metadata = create_test_metadata()
   let assert Ok(_) =
-    facts_v2.append_events(
+    facts.append_events(
       db,
       events,
       ticket_events.encode,
@@ -46,12 +46,12 @@ pub fn bulk_assign_empty_list_test() {
         "alice@example.com",
         "2024-01-01T10:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should succeed with empty events
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify successful execution with no events
     let assert CommandAccepted(events) = result
@@ -75,12 +75,12 @@ pub fn bulk_assign_single_ticket_test() {
         "alice@example.com",
         "2024-01-01T10:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify result
     let assert CommandAccepted(events) = result
@@ -107,12 +107,12 @@ pub fn bulk_assign_two_tickets_test() {
         "bob@example.com",
         "2024-01-01T11:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify result
     let assert CommandAccepted(events) = result

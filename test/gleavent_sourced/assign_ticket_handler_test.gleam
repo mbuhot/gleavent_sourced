@@ -1,13 +1,13 @@
 import gleam/dict
-import gleavent_sourced/command_handler_v2.{CommandAccepted, CommandRejected}
-import gleavent_sourced/customer_support/assign_ticket_handler_v2
+import gleavent_sourced/command_handler.{CommandAccepted, CommandRejected}
+import gleavent_sourced/customer_support/assign_ticket_handler
 import gleavent_sourced/customer_support/ticket_commands.{
   AssignTicketCommand, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events.{
   TicketAssigned, TicketClosed, TicketOpened,
 }
-import gleavent_sourced/facts_v2
+import gleavent_sourced/facts
 import gleavent_sourced/test_runner
 
 pub fn main() {
@@ -25,7 +25,7 @@ fn create_test_metadata() {
 fn setup_initial_events(db, events) {
   let test_metadata = create_test_metadata()
   let assert Ok(_) =
-    facts_v2.append_events(
+    facts.append_events(
       db,
       events,
       ticket_events.encode,
@@ -47,12 +47,12 @@ pub fn successful_assignment_creates_event_test() {
     let command =
       AssignTicketCommand("T-100", "alice@example.com", "2024-01-01T10:00:00Z")
     let handler =
-      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+      assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify successful assignment
     let assert CommandAccepted(events) = result
@@ -75,12 +75,12 @@ pub fn assignment_to_already_assigned_ticket_fails_test() {
     let command =
       AssignTicketCommand("T-101", "alice@example.com", "2024-01-01T10:00:00Z")
     let handler =
-      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+      assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -96,12 +96,12 @@ pub fn assignment_to_nonexistent_ticket_fails_test() {
     let command =
       AssignTicketCommand("T-999", "alice@example.com", "2024-01-01T10:00:00Z")
     let handler =
-      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+      assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -127,12 +127,12 @@ pub fn assignment_to_closed_ticket_fails_test() {
     let command =
       AssignTicketCommand("T-102", "alice@example.com", "2024-01-01T12:00:00Z")
     let handler =
-      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+      assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -151,12 +151,12 @@ pub fn empty_assignee_validation_fails_test() {
     // Try to assign with empty assignee
     let command = AssignTicketCommand("T-103", "", "2024-01-01T10:00:00Z")
     let handler =
-      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+      assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -180,12 +180,12 @@ pub fn empty_assigned_at_validation_fails_test() {
     // Try to assign with empty assigned_at timestamp
     let command = AssignTicketCommand("T-104", "alice@example.com", "")
     let handler =
-      assign_ticket_handler_v2.create_assign_ticket_handler_v2(command)
+      assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result

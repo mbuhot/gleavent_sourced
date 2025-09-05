@@ -1,14 +1,14 @@
 import gleam/dict
 import gleam/list
-import gleavent_sourced/command_handler_v2.{CommandAccepted, CommandRejected}
-import gleavent_sourced/customer_support/bulk_assign_handler_v2
+import gleavent_sourced/command_handler.{CommandAccepted, CommandRejected}
+import gleavent_sourced/customer_support/bulk_assign_handler
 import gleavent_sourced/customer_support/ticket_commands.{
   BulkAssignCommand, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events.{
   TicketAssigned, TicketClosed, TicketOpened,
 }
-import gleavent_sourced/facts_v2
+import gleavent_sourced/facts
 import gleavent_sourced/test_runner
 
 pub fn main() {
@@ -26,7 +26,7 @@ fn create_test_metadata() {
 fn setup_initial_events(db, events) {
   let test_metadata = create_test_metadata()
   let assert Ok(_) =
-    facts_v2.append_events(
+    facts.append_events(
       db,
       events,
       ticket_events.encode,
@@ -53,12 +53,12 @@ pub fn successful_bulk_assign_multiple_tickets_test() {
         "alice@example.com",
         "2024-01-01T10:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should succeed
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify successful bulk assignment creates events for all tickets
     let assert CommandAccepted(events) = result
@@ -88,12 +88,12 @@ pub fn bulk_assign_with_missing_tickets_fails_test() {
         "bob@example.com",
         "2024-01-01T11:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection lists all missing tickets
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -129,12 +129,12 @@ pub fn bulk_assign_with_closed_tickets_fails_test() {
         "charlie@example.com",
         "2024-01-01T11:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection lists all closed tickets
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -160,12 +160,12 @@ pub fn bulk_assign_with_empty_assignee_fails_test() {
         // Empty assignee
         "2024-01-01T11:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection with correct error message
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -189,12 +189,12 @@ pub fn bulk_assign_single_ticket_works_test() {
         "dave@example.com",
         "2024-01-01T12:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should succeed
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify successful assignment
     let assert CommandAccepted(events) = result
@@ -216,12 +216,12 @@ pub fn bulk_assign_empty_ticket_list_succeeds_test() {
         "eve@example.com",
         "2024-01-01T13:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should succeed with no events
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify successful execution with empty event list
     let assert CommandAccepted(events) = result
@@ -247,12 +247,12 @@ pub fn bulk_assign_mixed_problems_reports_first_failure_test() {
         "frank@example.com",
         "2024-01-01T14:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify rejection - validation order means missing tickets are checked first
     let assert CommandRejected(BusinessRuleViolation(message)) = result
@@ -286,12 +286,12 @@ pub fn bulk_assign_already_assigned_tickets_succeeds_test() {
         "new-assignee@example.com",
         "2024-01-01T15:00:00Z",
       )
-    let handler = bulk_assign_handler_v2.create_bulk_assign_handler_v2(command)
+    let handler = bulk_assign_handler.create_bulk_assign_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should succeed (reassignment allowed)
     let assert Ok(result) =
-      command_handler_v2.execute(db, handler, command, metadata)
+      command_handler.execute(db, handler, command, metadata)
 
     // Verify successful bulk assignment including reassignment
     let assert CommandAccepted(events) = result

@@ -1,11 +1,11 @@
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
-import gleavent_sourced/facts_v2
+import gleavent_sourced/facts
 import pog
 
 fn query_by_type_and_id(event_type, ticket_id, apply_events) {
-  facts_v2.new_fact(
+  facts.new_fact(
     sql: "SELECT * FROM events e WHERE e.event_type = $1::text AND e.payload @> jsonb_build_object('ticket_id', $2::text)",
     params: [pog.text(event_type), pog.text(ticket_id)],
     apply_events: apply_events,
@@ -26,7 +26,7 @@ fn fold_into(
 pub fn exists(
   ticket_id: String,
   update_context: fn(context, Bool) -> context,
-) -> facts_v2.Fact(context, TicketEvent) {
+) -> facts.Fact(context, TicketEvent) {
   query_by_type_and_id(
     "TicketOpened",
     ticket_id,
@@ -38,7 +38,7 @@ pub fn exists(
 pub fn is_closed(
   ticket_id: String,
   update_context: fn(context, Bool) -> context,
-) -> facts_v2.Fact(context, TicketEvent) {
+) -> facts.Fact(context, TicketEvent) {
   query_by_type_and_id(
     "TicketClosed",
     ticket_id,
@@ -50,7 +50,7 @@ pub fn is_closed(
 pub fn current_assignee(
   ticket_id: String,
   update_context: fn(context, Option(String)) -> context,
-) -> facts_v2.Fact(context, TicketEvent) {
+) -> facts.Fact(context, TicketEvent) {
   query_by_type_and_id(
     "TicketAssigned",
     ticket_id,
@@ -67,7 +67,7 @@ pub fn current_assignee(
 pub fn priority(
   ticket_id: String,
   update_context: fn(context, Option(String)) -> context,
-) -> facts_v2.Fact(context, TicketEvent) {
+) -> facts.Fact(context, TicketEvent) {
   query_by_type_and_id(
     "TicketOpened",
     ticket_id,
@@ -84,11 +84,11 @@ pub fn priority(
 pub fn child_tickets(
   parent_ticket_id: String,
   update_context: fn(context, List(String)) -> context,
-) -> facts_v2.Fact(context, TicketEvent) {
+) -> facts.Fact(context, TicketEvent) {
   let update_with_reverse = fn(context, children) {
     update_context(context, list.reverse(children))
   }
-  facts_v2.new_fact(
+  facts.new_fact(
     sql: "SELECT * FROM events e WHERE e.event_type = 'TicketParentLinked' AND e.payload @> jsonb_build_object('parent_ticket_id', $1::text)",
     params: [pog.text(parent_ticket_id)],
     apply_events: fold_into(update_with_reverse, [], fn(acc, event) {
@@ -114,8 +114,8 @@ pub type DuplicateStatus {
 pub fn duplicate_status(
   ticket_id: String,
   update_context: fn(context, DuplicateStatus) -> context,
-) -> facts_v2.Fact(context, TicketEvent) {
-  facts_v2.new_fact(
+) -> facts.Fact(context, TicketEvent) {
+  facts.new_fact(
     sql: "SELECT * FROM events e WHERE e.event_type = 'TicketMarkedDuplicate' AND (e.payload @> jsonb_build_object('duplicate_ticket_id', $1::text) OR e.payload @> jsonb_build_object('original_ticket_id', $1::text))",
     params: [pog.text(ticket_id)],
     apply_events: fn(context, events) {
@@ -138,8 +138,8 @@ pub fn duplicate_status(
 pub fn all_child_tickets_closed(
   parent_ticket_id: String,
   update_context: fn(context, Bool) -> context,
-) -> facts_v2.Fact(context, TicketEvent) {
-  facts_v2.new_fact(
+) -> facts.Fact(context, TicketEvent) {
+  facts.new_fact(
     sql: "SELECT * FROM events e "
       <> "WHERE (e.event_type = 'TicketParentLinked' AND e.payload @> jsonb_build_object('parent_ticket_id', $1::text)) "
       <> "OR (e.event_type = 'TicketClosed' AND e.payload->>'ticket_id' IN "
