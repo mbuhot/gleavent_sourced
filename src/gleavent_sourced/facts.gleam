@@ -14,13 +14,9 @@ import pog
 pub type Fact(context, event_type) {
   Fact(
     id: String,
-    // Unique identifier for CTE naming
     sql: String,
-    // Raw SQL query with $1, $2, etc. placeholders
     params: List(pog.Value),
-    // Parameters for the SQL query
     apply_events: fn(context, List(event_type)) -> context,
-    // Function to process events and update context
   )
 }
 
@@ -334,8 +330,25 @@ pub fn append_events(
   }
 }
 
-// Helper functions for parameter adjustment in SQL composition
+/// Simple append events without consistency checks - useful for testing and simple scenarios
+pub fn append_events_unchecked(
+  db: pog.Connection,
+  events: List(event_type),
+  event_converter: fn(event_type) -> #(String, json.Json),
+  metadata: dict.Dict(String, String),
+) -> Result(Nil, pog.QueryError) {
+  use _result <- result.try(append_events(
+    db,
+    events,
+    event_converter,
+    metadata,
+    [],
+    0,
+  ))
+  Ok(Nil)
+}
 
+// Helper types for SQL composition
 type CteResult {
   CteResult(name: String, sql: String, params: List(pog.Value))
 }

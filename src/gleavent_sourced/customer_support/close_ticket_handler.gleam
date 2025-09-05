@@ -45,11 +45,7 @@ fn ticket_close_fact(
   ticket_id: String,
 ) -> facts.Fact(TicketCloseContext, TicketEvent) {
   // Get the optimized SQL query that loads parent + child events in one query
-  let #(sql_query, params, _decoder) =
-    sql.ticket_closed_events(
-      fact_id: "ticket_close_context",
-      ticket_id: ticket_id,
-    )
+  let #(sql_query, params, _decoder) = sql.ticket_closed_events(ticket_id)
 
   // Convert parrot params to pog params
   let pog_params = list.map(params, parrot_pog.parrot_to_pog)

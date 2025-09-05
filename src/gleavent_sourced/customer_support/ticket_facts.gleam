@@ -2,11 +2,16 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/facts
+import gleavent_sourced/parrot_pog
+import gleavent_sourced/sql
 import pog
 
 fn query_by_type_and_id(event_type, ticket_id, apply_events) {
   facts.new_fact(
-    sql: "SELECT * FROM events e WHERE e.event_type = $1::text AND e.payload @> jsonb_build_object('ticket_id', $2::text)",
+    sql: "SELECT * "
+      <> "FROM events e "
+      <> "WHERE e.event_type = $1::text AND "
+      <> "  e.payload @> jsonb_build_object('ticket_id', $2::text)",
     params: [pog.text(event_type), pog.text(ticket_id)],
     apply_events: apply_events,
   )
@@ -88,9 +93,15 @@ pub fn child_tickets(
   let update_with_reverse = fn(context, children) {
     update_context(context, list.reverse(children))
   }
+  // Get the SQL query from generated sql.gleam
+  let #(sql_query, params, _decoder) = sql.child_tickets(parent_ticket_id)
+
+  // Convert parrot params to pog params
+  let pog_params = list.map(params, parrot_pog.parrot_to_pog)
+
   facts.new_fact(
-    sql: "SELECT * FROM events e WHERE e.event_type = 'TicketParentLinked' AND e.payload @> jsonb_build_object('parent_ticket_id', $1::text)",
-    params: [pog.text(parent_ticket_id)],
+    sql: sql_query,
+    params: pog_params,
     apply_events: fold_into(update_with_reverse, [], fn(acc, event) {
       case event {
         ticket_events.TicketParentLinked(child_id, parent_id) ->
@@ -115,9 +126,15 @@ pub fn duplicate_status(
   ticket_id: String,
   update_context: fn(context, DuplicateStatus) -> context,
 ) -> facts.Fact(context, TicketEvent) {
+  // Get the SQL query from generated sql.gleam
+  let #(sql_query, params, _decoder) = sql.duplicate_status(ticket_id)
+
+  // Convert parrot params to pog params
+  let pog_params = list.map(params, parrot_pog.parrot_to_pog)
+
   facts.new_fact(
-    sql: "SELECT * FROM events e WHERE e.event_type = 'TicketMarkedDuplicate' AND (e.payload @> jsonb_build_object('duplicate_ticket_id', $1::text) OR e.payload @> jsonb_build_object('original_ticket_id', $1::text))",
-    params: [pog.text(ticket_id)],
+    sql: sql_query,
+    params: pog_params,
     apply_events: fn(context, events) {
       let status = case events {
         [] -> Unique
@@ -139,13 +156,16 @@ pub fn all_child_tickets_closed(
   parent_ticket_id: String,
   update_context: fn(context, Bool) -> context,
 ) -> facts.Fact(context, TicketEvent) {
+  // Get the optimized SQL query from generated sql.gleam
+  let #(sql_query, params, _decoder) =
+    sql.all_child_tickets_closed(parent_ticket_id)
+
+  // Convert parrot params to pog params
+  let pog_params = list.map(params, parrot_pog.parrot_to_pog)
+
   facts.new_fact(
-    sql: "SELECT * FROM events e "
-      <> "WHERE (e.event_type = 'TicketParentLinked' AND e.payload @> jsonb_build_object('parent_ticket_id', $1::text)) "
-      <> "OR (e.event_type = 'TicketClosed' AND e.payload->>'ticket_id' IN "
-      <> "(SELECT linked.payload->>'ticket_id' FROM events linked WHERE linked.event_type = 'TicketParentLinked' AND "
-      <> "linked.payload @> jsonb_build_object('parent_ticket_id', $1::text)))",
-    params: [pog.text(parent_ticket_id)],
+    sql: sql_query,
+    params: pog_params,
     apply_events: fn(context, events) {
       let child_ids =
         list.filter_map(events, fn(event) {

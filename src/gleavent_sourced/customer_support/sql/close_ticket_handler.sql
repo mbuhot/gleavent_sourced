@@ -33,11 +33,9 @@ all_events as (
     from child_ticket_events
 )
 select
-    @fact_id::text as fact_id,
     ae.sequence_number,
     ae.event_type,
     ae.payload,
-    ae.metadata,
-    MAX(ae.sequence_number) OVER ()::bigint as max_sequence_number
+    ae.metadata
 from all_events ae
 order by ae.sequence_number;
