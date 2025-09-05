@@ -25,14 +25,7 @@ fn create_test_metadata() {
 fn setup_initial_events(db, events) {
   let test_metadata = create_test_metadata()
   let assert Ok(_) =
-    facts.append_events(
-      db,
-      events,
-      ticket_events.encode,
-      test_metadata,
-      [],
-      0,
-    )
+    facts.append_events(db, events, ticket_events.encode, test_metadata, [], 0)
 }
 
 pub fn successful_assignment_creates_event_test() {
@@ -46,8 +39,7 @@ pub fn successful_assignment_creates_event_test() {
     // Create command and handler
     let command =
       AssignTicketCommand("T-100", "alice@example.com", "2024-01-01T10:00:00Z")
-    let handler =
-      assign_ticket_handler.create_assign_ticket_handler(command)
+    let handler = assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command
@@ -74,8 +66,7 @@ pub fn assignment_to_already_assigned_ticket_fails_test() {
     // Try to assign to different person
     let command =
       AssignTicketCommand("T-101", "alice@example.com", "2024-01-01T10:00:00Z")
-    let handler =
-      assign_ticket_handler.create_assign_ticket_handler(command)
+    let handler = assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
@@ -95,8 +86,7 @@ pub fn assignment_to_nonexistent_ticket_fails_test() {
     // Try to assign to non-existent ticket
     let command =
       AssignTicketCommand("T-999", "alice@example.com", "2024-01-01T10:00:00Z")
-    let handler =
-      assign_ticket_handler.create_assign_ticket_handler(command)
+    let handler = assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
@@ -126,8 +116,7 @@ pub fn assignment_to_closed_ticket_fails_test() {
     // Try to assign closed ticket to different person
     let command =
       AssignTicketCommand("T-102", "alice@example.com", "2024-01-01T12:00:00Z")
-    let handler =
-      assign_ticket_handler.create_assign_ticket_handler(command)
+    let handler = assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
@@ -150,8 +139,7 @@ pub fn empty_assignee_validation_fails_test() {
 
     // Try to assign with empty assignee
     let command = AssignTicketCommand("T-103", "", "2024-01-01T10:00:00Z")
-    let handler =
-      assign_ticket_handler.create_assign_ticket_handler(command)
+    let handler = assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected
@@ -179,8 +167,7 @@ pub fn empty_assigned_at_validation_fails_test() {
 
     // Try to assign with empty assigned_at timestamp
     let command = AssignTicketCommand("T-104", "alice@example.com", "")
-    let handler =
-      assign_ticket_handler.create_assign_ticket_handler(command)
+    let handler = assign_ticket_handler.create_assign_ticket_handler(command)
     let metadata = create_test_metadata()
 
     // Execute command - should be rejected

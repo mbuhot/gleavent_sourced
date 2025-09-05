@@ -2,9 +2,7 @@ import gleam/dict
 import gleam/list
 import gleavent_sourced/command_handler.{CommandAccepted}
 import gleavent_sourced/customer_support/bulk_assign_handler
-import gleavent_sourced/customer_support/ticket_commands.{
-  BulkAssignCommand,
-}
+import gleavent_sourced/customer_support/ticket_commands.{BulkAssignCommand}
 import gleavent_sourced/customer_support/ticket_events.{
   TicketAssigned, TicketOpened,
 }
@@ -26,14 +24,7 @@ fn create_test_metadata() {
 fn setup_initial_events(db, events) {
   let test_metadata = create_test_metadata()
   let assert Ok(_) =
-    facts.append_events(
-      db,
-      events,
-      ticket_events.encode,
-      test_metadata,
-      [],
-      0,
-    )
+    facts.append_events(db, events, ticket_events.encode, test_metadata, [], 0)
 }
 
 pub fn bulk_assign_empty_list_test() {

@@ -26,14 +26,7 @@ fn create_test_metadata() {
 fn setup_initial_events(db, events) {
   let test_metadata = create_test_metadata()
   let assert Ok(_) =
-    facts.append_events(
-      db,
-      events,
-      ticket_events.encode,
-      test_metadata,
-      [],
-      0,
-    )
+    facts.append_events(db, events, ticket_events.encode, test_metadata, [], 0)
 }
 
 pub fn successful_bulk_assign_multiple_tickets_test() {

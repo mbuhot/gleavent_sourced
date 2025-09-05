@@ -33,18 +33,12 @@ fn facts(original_ticket_id: String, duplicate_ticket_id: String) {
     ticket_facts.exists(original_ticket_id, fn(ctx, original_ticket_exists) {
       MarkDuplicateContext(..ctx, original_ticket_exists:)
     }),
-    ticket_facts.is_closed(
-      original_ticket_id,
-      fn(ctx, original_ticket_closed) {
-        MarkDuplicateContext(..ctx, original_ticket_closed:)
-      },
-    ),
-    ticket_facts.exists(
-      duplicate_ticket_id,
-      fn(ctx, duplicate_ticket_exists) {
-        MarkDuplicateContext(..ctx, duplicate_ticket_exists:)
-      },
-    ),
+    ticket_facts.is_closed(original_ticket_id, fn(ctx, original_ticket_closed) {
+      MarkDuplicateContext(..ctx, original_ticket_closed:)
+    }),
+    ticket_facts.exists(duplicate_ticket_id, fn(ctx, duplicate_ticket_exists) {
+      MarkDuplicateContext(..ctx, duplicate_ticket_exists:)
+    }),
     ticket_facts.duplicate_status(
       duplicate_ticket_id,
       fn(ctx, duplicate_ticket_status) {
