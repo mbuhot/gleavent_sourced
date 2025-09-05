@@ -1,4 +1,5 @@
 import gleam/option.{type Option, None, Some}
+import gleam/result
 
 import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
@@ -6,7 +7,7 @@ import gleavent_sourced/customer_support/ticket_commands.{
 }
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/customer_support/ticket_facts
-import gleavent_sourced/validation.{require, validate}
+import gleavent_sourced/validation.{require}
 
 // Context built from facts to validate ticket assignment business rules
 // Contains validation state for the ticket being assigned
@@ -66,11 +67,11 @@ fn execute(
   command: AssignTicketCommand,
   context: TicketAssignmentContext,
 ) -> Result(List(TicketEvent), TicketError) {
-  use _ <- validate(ticket_exists, context)
-  use _ <- validate(ticket_not_closed, context)
-  use _ <- validate(not_already_assigned, context)
-  use _ <- validate(assignee, command.assignee)
-  use _ <- validate(assigned_at, command.assigned_at)
+  use _ <- result.try(ticket_exists(context))
+  use _ <- result.try(ticket_not_closed(context))
+  use _ <- result.try(not_already_assigned(context))
+  use _ <- result.try(assignee(command.assignee))
+  use _ <- result.try(assigned_at(command.assigned_at))
   Ok([
     ticket_events.TicketAssigned(
       command.ticket_id,

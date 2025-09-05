@@ -6,7 +6,7 @@ import gleavent_sourced/test_runner
 import pog
 
 pub fn main() {
-  test_runner.run_eunit(["gleavent_sourced/facts_v2_test"])
+  test_runner.run_eunit(["gleavent_sourced/facts_test"])
 }
 
 pub type TestContext {

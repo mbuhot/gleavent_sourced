@@ -11,7 +11,7 @@ import gleavent_sourced/test_runner
 import pog
 
 pub fn main() {
-  test_runner.run_eunit(["gleavent_sourced/command_handler_v2_test"])
+  test_runner.run_eunit(["gleavent_sourced/command_handler_test"])
 }
 
 pub type TestCommand {

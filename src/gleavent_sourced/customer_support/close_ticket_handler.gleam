@@ -1,5 +1,6 @@
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 
 import gleavent_sourced/command_handler.{type CommandHandler}
@@ -10,7 +11,7 @@ import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/facts
 import gleavent_sourced/parrot_pog
 import gleavent_sourced/sql
-import gleavent_sourced/validation.{require, validate}
+import gleavent_sourced/validation.{require}
 
 // Context built from facts to validate ticket closing business rules
 // Contains validation state for the ticket being closed
@@ -136,12 +137,12 @@ fn execute(
   command: CloseTicketCommand,
   context: TicketCloseContext,
 ) -> Result(List(TicketEvent), TicketError) {
-  use _ <- validate(ticket_exists, context)
-  use _ <- validate(ticket_not_already_closed, context)
-  use _ <- validate(no_open_children, context)
-  use _ <- validate(closer_permissions(_, command.closed_by), context)
-  use _ <- validate(resolution_detail(_, command.resolution), context)
-  use _ <- validate(closed_at, command.closed_at)
+  use _ <- result.try(ticket_exists(context))
+  use _ <- result.try(ticket_not_already_closed(context))
+  use _ <- result.try(no_open_children(context))
+  use _ <- result.try(closer_permissions(context, command.closed_by))
+  use _ <- result.try(resolution_detail(context, command.resolution))
+  use _ <- result.try(closed_at(command.closed_at))
   Ok([
     ticket_events.TicketClosed(
       command.ticket_id,

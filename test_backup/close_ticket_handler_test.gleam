@@ -12,7 +12,7 @@ import gleavent_sourced/test_runner
 
 pub fn main() {
   test_runner.run_eunit([
-    "gleavent_sourced/close_ticket_handler_v2_test",
+    "gleavent_sourced/close_ticket_handler_test",
   ])
 }
 

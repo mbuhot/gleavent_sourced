@@ -1,5 +1,6 @@
 import gleam/dict
 import gleam/list
+import gleam/result
 import gleam/option
 import gleam/string
 
@@ -9,7 +10,7 @@ import gleavent_sourced/customer_support/ticket_commands.{
 }
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/customer_support/ticket_facts
-import gleavent_sourced/validation.{require, validate}
+import gleavent_sourced/validation.{require}
 
 // Context for bulk assignment containing validation state for all tickets
 pub type BulkAssignContext {
@@ -92,9 +93,9 @@ fn execute(
   command: BulkAssignCommand,
   context: BulkAssignContext,
 ) -> Result(List(TicketEvent), TicketError) {
-  use _ <- validate(all_tickets_exist, context)
-  use _ <- validate(no_tickets_closed, context)
-  use _ <- validate(assignee_valid(_, command.assignee), context)
+  use _ <- result.try(all_tickets_exist(context))
+  use _ <- result.try(no_tickets_closed(context))
+  use _ <- result.try(assignee_valid(context, command.assignee))
 
   // Create TicketAssigned event for each ticket
   let events =

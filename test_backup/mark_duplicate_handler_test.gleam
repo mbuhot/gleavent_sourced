@@ -12,7 +12,7 @@ import gleavent_sourced/test_runner
 
 pub fn main() {
   test_runner.run_eunit([
-    "gleavent_sourced/mark_duplicate_handler_v2_test",
+    "gleavent_sourced/mark_duplicate_handler_test",
   ])
 }
 

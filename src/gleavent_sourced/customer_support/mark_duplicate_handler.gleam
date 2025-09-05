@@ -1,10 +1,12 @@
+import gleam/result
+
 import gleavent_sourced/command_handler.{type CommandHandler}
 import gleavent_sourced/customer_support/ticket_commands.{
   type MarkDuplicateCommand, type TicketError, BusinessRuleViolation,
 }
 import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/customer_support/ticket_facts
-import gleavent_sourced/validation.{require, validate}
+import gleavent_sourced/validation.{require}
 
 // Context built from facts to validate duplicate marking business rules
 // Contains validation state for both tickets involved in the duplicate relationship
@@ -72,10 +74,10 @@ fn execute(
   command: MarkDuplicateCommand,
   context: MarkDuplicateContext,
 ) -> Result(List(TicketEvent), TicketError) {
-  use _ <- validate(original_ticket_exists, context)
-  use _ <- validate(duplicate_ticket_exists, context)
-  use _ <- validate(not_self_reference, command)
-  use _ <- validate(not_already_duplicate, context)
+  use _ <- result.try(original_ticket_exists(context))
+  use _ <- result.try(duplicate_ticket_exists(context))
+  use _ <- result.try(not_self_reference(command))
+  use _ <- result.try(not_already_duplicate(context))
 
   // All validations pass - create the event
   let events = [

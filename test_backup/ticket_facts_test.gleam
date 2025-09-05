@@ -8,7 +8,7 @@ import gleavent_sourced/facts_v2
 import gleavent_sourced/test_runner
 
 pub fn main() {
-  test_runner.run_eunit(["gleavent_sourced/ticket_facts_v2_test"])
+  test_runner.run_eunit(["gleavent_sourced/ticket_facts_test"])
 }
 
 pub type TicketContext {
@@ -25,7 +25,7 @@ pub type TicketContext {
 
 pub fn create_test_metadata() -> dict.Dict(String, String) {
   dict.from_list([
-    #("source", "ticket_facts_v2_test"),
+    #("source", "ticket_facts_test"),
     #("version", "1"),
   ])
 }

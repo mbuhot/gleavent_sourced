@@ -8,7 +8,7 @@ import gleavent_sourced/customer_support/ticket_commands.{
 import gleavent_sourced/customer_support/ticket_events.{
   type TicketEvent, TicketOpened,
 }
-import gleavent_sourced/validation.{require, validate}
+import gleavent_sourced/validation.{require}
 
 // Creates command handler for opening tickets - no facts needed since this creates new tickets
 // Uses empty facts list since no existing state needs to be loaded
@@ -20,9 +20,7 @@ pub fn create_open_ticket_handler() -> CommandHandler(
 ) {
   command_handler.new(
     Nil,
-    // No context needed for ticket creation
     [],
-    // No facts needed - creating new tickets
     execute,
     ticket_events.decode,
     ticket_events.encode,
@@ -34,9 +32,9 @@ fn execute(
   command: OpenTicketCommand,
   _ctx: Nil,
 ) -> Result(List(TicketEvent), TicketError) {
-  use _ <- validate(ticket_id_valid, command.ticket_id)
-  use _ <- validate(title_valid, command.title)
-  use _ <- validate(priority_valid, command.priority)
+  use _ <- result.try(ticket_id_valid(command.ticket_id))
+  use _ <- result.try(title_valid(command.title))
+  use _ <- result.try(priority_valid(command.priority))
   Ok([
     TicketOpened(
       command.ticket_id,
