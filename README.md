@@ -294,9 +294,11 @@ pub fn handle_account_command(
 ## Development
 
 ```sh
-gleam deps download  # Download dependencies
-gleam build  # Build the project
-gleam test  # Run the tests
+gleam deps download     # Download dependencies
+gleam build             # Build the project
+gleam run -m cigogne up # migrate database
+gleam run -m parrot     # generate gleam.sql
+gleam test              # Run the tests
 ```
 
 ## Technology Stack
@@ -306,7 +308,6 @@ gleam test  # Run the tests
 - **Parrot**: PostgreSQL integration for Gleam
 - **Cigogne**: Database migrations
 - **Gleeunit**: Testing framework
-
 
 ## License
 
