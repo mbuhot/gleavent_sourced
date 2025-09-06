@@ -4,6 +4,7 @@ import gleavent_sourced/customer_support/ticket_events.{type TicketEvent}
 import gleavent_sourced/facts
 import gleavent_sourced/parrot_pog
 import gleavent_sourced/sql
+import gleavent_sourced/utils
 import pog
 
 fn query_by_type_and_id(event_type, ticket_id, apply_events) {
@@ -17,15 +18,7 @@ fn query_by_type_and_id(event_type, ticket_id, apply_events) {
   )
 }
 
-fn fold_into(
-  update_context: fn(context, value) -> context,
-  zero: value,
-  apply: fn(value, event) -> value,
-) {
-  fn(context, events) {
-    list.fold(events, zero, apply) |> update_context(context, _)
-  }
-}
+
 
 /// Whether a ticket exists (derived from TicketOpened events)
 pub fn exists(
@@ -35,7 +28,7 @@ pub fn exists(
   query_by_type_and_id(
     "TicketOpened",
     ticket_id,
-    fold_into(update_context, False, fn(_acc, _event) { True }),
+    utils.fold_into(update_context, False, fn(_acc, _event) { True }),
   )
 }
 
@@ -47,7 +40,7 @@ pub fn is_closed(
   query_by_type_and_id(
     "TicketClosed",
     ticket_id,
-    fold_into(update_context, False, fn(_acc, _event) { True }),
+    utils.fold_into(update_context, False, fn(_acc, _event) { True }),
   )
 }
 
@@ -59,7 +52,7 @@ pub fn current_assignee(
   query_by_type_and_id(
     "TicketAssigned",
     ticket_id,
-    fold_into(update_context, None, fn(acc, event) {
+    utils.fold_into(update_context, None, fn(acc, event) {
       case event {
         ticket_events.TicketAssigned(_, assignee, _) -> Some(assignee)
         _ -> acc
@@ -76,7 +69,7 @@ pub fn priority(
   query_by_type_and_id(
     "TicketOpened",
     ticket_id,
-    fold_into(update_context, None, fn(acc, event) {
+    utils.fold_into(update_context, None, fn(acc, event) {
       case event {
         ticket_events.TicketOpened(_, _, _, priority) -> Some(priority)
         _ -> acc
@@ -102,7 +95,7 @@ pub fn child_tickets(
   facts.new_fact(
     sql: sql_query,
     params: pog_params,
-    apply_events: fold_into(update_with_reverse, [], fn(acc, event) {
+    apply_events: utils.fold_into(update_with_reverse, [], fn(acc, event) {
       case event {
         ticket_events.TicketParentLinked(child_id, parent_id) ->
           case parent_id == parent_ticket_id {
