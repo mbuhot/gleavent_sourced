@@ -55,6 +55,7 @@ Here's a complete example showing all components of a command handler that aggre
 Input to the command handler
 
 ```gleam
+// account_commands.gleam
 pub type TransferMoneyCommand {
   TransferMoneyCommand(
     from_account: String,
@@ -64,6 +65,12 @@ pub type TransferMoneyCommand {
     timestamp: Timestamp,
   )
 }
+
+// Error type if when commands are rejected
+pub type AccountError {
+  ValidationError(message: String)
+  BusinessRuleViolation(message: String)
+}
 ```
 
 ### Events
@@ -71,6 +78,7 @@ pub type TransferMoneyCommand {
 Domain events that get stored
 
 ```gleam
+// account_events.gleam
 pub type AccountEvent {
   AccountCreated(account_id: String, initial_balance: Int, daily_limit: Int, timestamp: Timestamp)
   MoneyDeposited(account_id: String, amount: Int, timestamp: Timestamp)
@@ -84,6 +92,9 @@ pub type AccountEvent {
 Reduce events to extract meaningful information
 
 ```gleam
+// account_facts.gleam
+
+// reduces over account events to produce the current account balance
 pub fn account_balance(
   account_id: String,
   update_context: fn(context, Int) -> context,
@@ -110,6 +121,7 @@ pub fn account_balance(
   )
 }
 
+// Reduces over the AccountCreated event to confirm an account exists
 pub fn account_exists(
   account_id: String,
   update_context: fn(context, Bool) -> context,
@@ -123,6 +135,7 @@ pub fn account_exists(
   )
 }
 
+// Reduces over the MoneyWithdrawn and MoneyTransferred events to calculate total daily spending
 pub fn daily_spending(
   account_id: String,
   today: Timestamp,
@@ -152,6 +165,7 @@ pub fn daily_spending(
   )
 }
 
+// Reduces over the AccountCreated event read daily limit
 pub fn daily_limit(
   account_id: String,
   update_context: fn(context, Int) -> context,
@@ -175,6 +189,9 @@ pub fn daily_limit(
 Uses Facts to create a context, validate the command and return list of Events or an Error
 
 ```gleam
+// transfer_money_handler.gleam
+
+// Information context required to handle a TransferMoneyCommand
 pub type TransferContext {
   TransferContext(
     from_account_exists: Bool,
@@ -186,30 +203,31 @@ pub type TransferContext {
   )
 }
 
+// Initial value of the context before facts are applied
 fn initial_context() {
   TransferContext(
     from_account_exists: False,
     to_account_exists: False,
     from_account_balance: 0,
-    to_account_balance: 0,
     from_account_daily_limit: 0,
     from_account_daily_spending: 0,
   )
 }
 
+// The Facts we'll use to build up the context
 fn facts(from_account: String, to_account: String, today: Timestamp) {
   [
+    account_exists(from_account, fn(ctx, exists) {
+      TransferContext(..ctx, from_account_exists: exists)
+    }),
     account_exists(to_account, fn(ctx, exists) {
       TransferContext(..ctx, to_account_exists: exists)
     }),
     account_balance(from_account, fn(ctx, balance) {
       TransferContext(..ctx, from_account_balance: balance)
     }),
-    account_balance(to_account, fn(ctx, balance) {
-      TransferContext(..ctx, to_account_balance: balance)
-    }),
     daily_limit(from_account, fn(ctx, limit) {
-      TransferContext(..ctx, from_account_daily_limit: limit, from_account_exists: limit > 0)
+      TransferContext(..ctx, from_account_daily_limit: limit)
     }),
     daily_spending(from_account, today, fn(ctx, spending) {
       TransferContext(..ctx, from_account_daily_spending: spending)
@@ -217,6 +235,7 @@ fn facts(from_account: String, to_account: String, today: Timestamp) {
   ]
 }
 
+// Construct a CommandHandler from context, facts and execution function
 pub fn create_transfer_handler(command: TransferMoneyCommand) {
   command_handler.new(
     initial_context(),
@@ -227,6 +246,7 @@ pub fn create_transfer_handler(command: TransferMoneyCommand) {
   )
 }
 
+// Pure function to execute business logic, validating command against context and emitting events
 fn execute(command: TransferMoneyCommand, context: TransferContext) -> Result(List(AccountEvent), AccountError) {
   use _ <- result.try(require(context.from_account_exists, "Source account does not exist"))
   use _ <- result.try(require(context.to_account_exists, "Destination account does not exist"))
@@ -248,11 +268,7 @@ fn execute(command: TransferMoneyCommand, context: TransferContext) -> Result(Li
   ])
 }
 
-pub type AccountError {
-  ValidationError(message: String)
-  BusinessRuleViolation(message: String)
-}
-
+// validation helper
 fn require(condition: Bool, message: String) -> Result(Nil, AccountError) {
   case condition {
     True -> Ok(Nil)
@@ -266,6 +282,8 @@ fn require(condition: Bool, message: String) -> Result(Nil, AccountError) {
 Create `CommandHandler` instances and execute logic transactionally
 
 ```gleam
+
+// Combine command types into custom type for dispatch
 pub type AccountCommand {
   CreateAccount(CreateAccountCommand)
   DepositMoney(DepositMoneyCommand)
@@ -273,6 +291,7 @@ pub type AccountCommand {
   TransferMoney(TransferMoneyCommand)
 }
 
+// Dispatch a command by creating appropriate handler and passing to command_handler.execute
 pub fn handle_account_command(
   command: AccountCommand,
   db: pog.Connection,
